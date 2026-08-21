@@ -1,0 +1,9 @@
+# Build output
+dist/
+
+# Claude Code local project settings
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db

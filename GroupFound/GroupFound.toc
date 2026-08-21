@@ -1,0 +1,20 @@
+## Interface: 11509
+## Title: GroupFound
+## Notes: Hardcore-Handelsschutz - Handel, Post und Auktionshaus nur mit Spielern auf deiner Whitelist.
+## Notes-deDE: Hardcore-Handelsschutz - Handel, Post und Auktionshaus nur mit Spielern auf deiner Whitelist.
+## Notes-frFR: Protection commerciale Hardcore - échange, courrier et hôtel des ventes réservés aux joueurs de votre liste.
+## Notes-esES: Protección comercial Hardcore - comercio, correo y casa de subastas solo con jugadores de tu lista.
+## Notes-ptBR: Proteção de comércio Hardcore - comércio, correio e casa de leilões apenas com jogadores da sua lista.
+## Notes-itIT: Protezione commerciale Hardcore - scambio, posta e casa d'aste solo con i giocatori della tua lista.
+## Notes-ruRU: Защита торговли для Хардкора - торговля, почта и аукцион только с игроками из вашего списка.
+## Notes-koKR: 하드코어 거래 보호 - 목록에 있는 플레이어와만 거래, 우편, 경매장 이용이 가능합니다.
+## Notes-zhCN: 硬核交易保护 - 仅可与名单中的玩家交易、寄信及使用拍卖行。
+## Notes-zhTW: 硬核交易保護 - 僅可與名單中的玩家交易、寄信及使用拍賣場。
+## Author: Stephan
+## Version: 1.2.0
+## SavedVariables: GroupFoundDB
+## IconTexture: Interface\Icons\INV_Misc_Note_01
+
+Locales.lua
+Core.lua
+UI.lua
