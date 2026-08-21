@@ -23,6 +23,7 @@ local defaults = {
     ADD_HINT = "Leave empty and click to add your current target.",
     CMD_LABEL = "Commands",
     REMOVE_TOOLTIP = "Remove from list",
+    MINIMAP_TOOLTIP = "Left-click: open/close the whitelist window",
 
     CMD_TOGGLE = "/gf - open/close window",
     CMD_ADD = "/gf add <name> - add player",
@@ -66,6 +67,7 @@ overrides.deDE = {
     ADD_HINT = "Leer lassen und klicken, um dein aktuelles Ziel hinzuzufügen.",
     CMD_LABEL = "Befehle",
     REMOVE_TOOLTIP = "Von der Liste entfernen",
+    MINIMAP_TOOLTIP = "Linksklick: Whitelist-Fenster öffnen/schließen",
 
     CMD_TOGGLE = "/gf - Fenster öffnen/schließen",
     CMD_ADD = "/gf add <Name> - Spieler hinzufügen",
@@ -99,6 +101,7 @@ overrides.frFR = {
     ADD_HINT = "Laissez vide et cliquez pour ajouter votre cible actuelle.",
     CMD_LABEL = "Commandes",
     REMOVE_TOOLTIP = "Retirer de la liste",
+    MINIMAP_TOOLTIP = "Clic gauche : ouvrir/fermer la fenêtre de liste blanche",
 
     CMD_TOGGLE = "/gf - ouvrir/fermer la fenêtre",
     CMD_ADD = "/gf add <nom> - ajouter un joueur",
@@ -132,6 +135,7 @@ overrides.esES = {
     ADD_HINT = "Déjalo vacío y haz clic para añadir tu objetivo actual.",
     CMD_LABEL = "Comandos",
     REMOVE_TOOLTIP = "Quitar de la lista",
+    MINIMAP_TOOLTIP = "Clic izquierdo: abrir/cerrar la ventana de la lista blanca",
 
     CMD_TOGGLE = "/gf - abrir/cerrar ventana",
     CMD_ADD = "/gf add <nombre> - añadir jugador",
@@ -167,6 +171,7 @@ overrides.ptBR = {
     ADD_HINT = "Deixe vazio e clique para adicionar seu alvo atual.",
     CMD_LABEL = "Comandos",
     REMOVE_TOOLTIP = "Remover da lista",
+    MINIMAP_TOOLTIP = "Clique esquerdo: abrir/fechar a janela da lista branca",
 
     CMD_TOGGLE = "/gf - abrir/fechar janela",
     CMD_ADD = "/gf add <nome> - adicionar jogador",
@@ -200,6 +205,7 @@ overrides.itIT = {
     ADD_HINT = "Lascia vuoto e clicca per aggiungere il tuo bersaglio attuale.",
     CMD_LABEL = "Comandi",
     REMOVE_TOOLTIP = "Rimuovi dalla lista",
+    MINIMAP_TOOLTIP = "Clic sinistro: apri/chiudi la finestra della lista bianca",
 
     CMD_TOGGLE = "/gf - apri/chiudi finestra",
     CMD_ADD = "/gf add <nome> - aggiungi giocatore",
@@ -233,6 +239,7 @@ overrides.ruRU = {
     ADD_HINT = "Оставьте поле пустым и нажмите, чтобы добавить текущую цель.",
     CMD_LABEL = "Команды",
     REMOVE_TOOLTIP = "Удалить из списка",
+    MINIMAP_TOOLTIP = "Левый клик: открыть/закрыть окно белого списка",
 
     CMD_TOGGLE = "/gf - открыть/закрыть окно",
     CMD_ADD = "/gf add <имя> - добавить игрока",
@@ -266,6 +273,7 @@ overrides.koKR = {
     ADD_HINT = "비워두고 클릭하면 현재 대상이 추가됩니다.",
     CMD_LABEL = "명령어",
     REMOVE_TOOLTIP = "목록에서 제거",
+    MINIMAP_TOOLTIP = "왼쪽 클릭: 화이트리스트 창 열기/닫기",
 
     CMD_TOGGLE = "/gf - 창 열기/닫기",
     CMD_ADD = "/gf add <이름> - 플레이어 추가",
@@ -299,6 +307,7 @@ overrides.zhCN = {
     ADD_HINT = "留空并点击即可添加当前目标。",
     CMD_LABEL = "命令",
     REMOVE_TOOLTIP = "从名单中移除",
+    MINIMAP_TOOLTIP = "左键点击：打开/关闭白名单窗口",
 
     CMD_TOGGLE = "/gf - 打开/关闭窗口",
     CMD_ADD = "/gf add <名字> - 添加玩家",
@@ -332,6 +341,7 @@ overrides.zhTW = {
     ADD_HINT = "留空並點擊即可新增目前的目標。",
     CMD_LABEL = "指令",
     REMOVE_TOOLTIP = "從名單中移除",
+    MINIMAP_TOOLTIP = "左鍵點擊：開啟/關閉白名單視窗",
 
     CMD_TOGGLE = "/gf - 開啟/關閉視窗",
     CMD_ADD = "/gf add <名字> - 新增玩家",

@@ -31,6 +31,7 @@ end
 function GroupFound.InitDB()
     GroupFoundDB = GroupFoundDB or {}
     GroupFoundDB.whitelist = GroupFoundDB.whitelist or {}
+    GroupFoundDB.minimapPos = GroupFoundDB.minimapPos or 200
 end
 
 ------------------------------------------------------------
