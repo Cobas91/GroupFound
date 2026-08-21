@@ -124,6 +124,10 @@ end
 -- Handel (Trade-Fenster)
 ------------------------------------------------------------
 
+-- Verhindert Chat-Spam, falls jemand mehrfach hintereinander einen Handel anfragt.
+local SAY_COOLDOWN = 10
+local lastSayTime = 0
+
 local function HandleTradeShow()
     local name, realm = UnitName("npc")
     if GroupFound.IsWhitelisted(name, realm) then
@@ -131,6 +135,13 @@ local function HandleTradeShow()
     end
 
     GroupFound.Print(L.MSG_TRADE_BLOCKED:format(name or "?"))
+
+    local now = GetTime()
+    if now - lastSayTime > SAY_COOLDOWN then
+        lastSayTime = now
+        SendChatMessage(L.SAY_TRADE_BLOCKED:format(name or ""), "SAY")
+    end
+
     CancelTrade()
 end
 

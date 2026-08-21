@@ -32,6 +32,7 @@ local defaults = {
     CMD_LIST = "/gf list - show list in chat",
 
     MSG_TRADE_BLOCKED = "Trade with %s is not allowed (not on your list).",
+    SAY_TRADE_BLOCKED = "Sorry %s, I'm using the GroupFound addon and can only trade with players on my whitelist.",
     MSG_AH_BLOCKED = "The auction house is disabled.",
     MSG_MAIL_SEND_BLOCKED = "Mail to %s is not allowed (not on your list).",
     MSG_MAIL_TAKE_BLOCKED = "Attachment/money from %s is blocked (not on your list).",
@@ -76,6 +77,7 @@ overrides.deDE = {
     CMD_LIST = "/gf list - Liste im Chat anzeigen",
 
     MSG_TRADE_BLOCKED = "Handel mit %s ist nicht erlaubt (nicht auf deiner Liste).",
+    SAY_TRADE_BLOCKED = "Sorry %s, ich benutze das GroupFound-Addon und kann nur mit Spielern auf meiner Liste handeln.",
     MSG_AH_BLOCKED = "Das Auktionshaus ist deaktiviert.",
     MSG_MAIL_SEND_BLOCKED = "Post an %s ist nicht erlaubt (nicht auf deiner Liste).",
     MSG_MAIL_TAKE_BLOCKED = "Anhang/Geld von %s wird blockiert (nicht auf deiner Liste).",
@@ -110,6 +112,7 @@ overrides.frFR = {
     CMD_LIST = "/gf list - afficher la liste dans le chat",
 
     MSG_TRADE_BLOCKED = "L'échange avec %s n'est pas autorisé (absent de votre liste).",
+    SAY_TRADE_BLOCKED = "Désolé %s, j'utilise l'addon GroupFound et je ne peux échanger qu'avec les joueurs de ma liste blanche.",
     MSG_AH_BLOCKED = "L'hôtel des ventes est désactivé.",
     MSG_MAIL_SEND_BLOCKED = "Le courrier vers %s n'est pas autorisé (absent de votre liste).",
     MSG_MAIL_TAKE_BLOCKED = "Pièce jointe/argent de %s bloqué (absent de votre liste).",
@@ -144,6 +147,7 @@ overrides.esES = {
     CMD_LIST = "/gf list - mostrar la lista en el chat",
 
     MSG_TRADE_BLOCKED = "No se permite comerciar con %s (no está en tu lista).",
+    SAY_TRADE_BLOCKED = "Lo siento %s, uso el addon GroupFound y solo puedo comerciar con jugadores de mi lista blanca.",
     MSG_AH_BLOCKED = "La casa de subastas está desactivada.",
     MSG_MAIL_SEND_BLOCKED = "No se permite enviar correo a %s (no está en tu lista).",
     MSG_MAIL_TAKE_BLOCKED = "Se bloquea el adjunto/dinero de %s (no está en tu lista).",
@@ -180,6 +184,7 @@ overrides.ptBR = {
     CMD_LIST = "/gf list - mostrar lista no chat",
 
     MSG_TRADE_BLOCKED = "Comércio com %s não é permitido (não está na sua lista).",
+    SAY_TRADE_BLOCKED = "Desculpe %s, eu uso o addon GroupFound e só posso negociar com jogadores da minha lista branca.",
     MSG_AH_BLOCKED = "A casa de leilões está desativada.",
     MSG_MAIL_SEND_BLOCKED = "Correio para %s não é permitido (não está na sua lista).",
     MSG_MAIL_TAKE_BLOCKED = "Anexo/dinheiro de %s bloqueado (não está na sua lista).",
@@ -214,6 +219,7 @@ overrides.itIT = {
     CMD_LIST = "/gf list - mostra la lista in chat",
 
     MSG_TRADE_BLOCKED = "Lo scambio con %s non è consentito (non è nella tua lista).",
+    SAY_TRADE_BLOCKED = "Scusa %s, uso l'addon GroupFound e posso scambiare solo con i giocatori nella mia lista bianca.",
     MSG_AH_BLOCKED = "La casa d'aste è disattivata.",
     MSG_MAIL_SEND_BLOCKED = "L'invio di posta a %s non è consentito (non è nella tua lista).",
     MSG_MAIL_TAKE_BLOCKED = "Allegato/denaro da %s bloccato (non è nella tua lista).",
@@ -248,6 +254,7 @@ overrides.ruRU = {
     CMD_LIST = "/gf list - показать список в чате",
 
     MSG_TRADE_BLOCKED = "Торговля с %s запрещена (нет в вашем списке).",
+    SAY_TRADE_BLOCKED = "Извини, %s, я использую аддон GroupFound и могу торговать только с игроками из своего списка.",
     MSG_AH_BLOCKED = "Аукцион отключён.",
     MSG_MAIL_SEND_BLOCKED = "Отправка почты игроку %s запрещена (нет в вашем списке).",
     MSG_MAIL_TAKE_BLOCKED = "Вложение/деньги от %s заблокированы (нет в вашем списке).",
@@ -282,6 +289,7 @@ overrides.koKR = {
     CMD_LIST = "/gf list - 채팅에 목록 표시",
 
     MSG_TRADE_BLOCKED = "%s 님과의 거래는 허용되지 않습니다 (목록에 없음).",
+    SAY_TRADE_BLOCKED = "미안해요 %s, 저는 GroupFound 애드온을 사용 중이라 화이트리스트에 있는 플레이어와만 거래할 수 있어요.",
     MSG_AH_BLOCKED = "경매장이 비활성화되어 있습니다.",
     MSG_MAIL_SEND_BLOCKED = "%s 님에게 우편을 보낼 수 없습니다 (목록에 없음).",
     MSG_MAIL_TAKE_BLOCKED = "%s 님의 첨부물/돈이 차단되었습니다 (목록에 없음).",
@@ -316,6 +324,7 @@ overrides.zhCN = {
     CMD_LIST = "/gf list - 在聊天框显示名单",
 
     MSG_TRADE_BLOCKED = "不允许与 %s 交易（不在你的名单中）。",
+    SAY_TRADE_BLOCKED = "抱歉 %s，我在使用 GroupFound 插件，只能与白名单中的玩家交易。",
     MSG_AH_BLOCKED = "拍卖行已被禁用。",
     MSG_MAIL_SEND_BLOCKED = "不允许给 %s 寄信（不在你的名单中）。",
     MSG_MAIL_TAKE_BLOCKED = "已屏蔽来自 %s 的附件/金钱（不在你的名单中）。",
@@ -350,6 +359,7 @@ overrides.zhTW = {
     CMD_LIST = "/gf list - 在聊天視窗顯示名單",
 
     MSG_TRADE_BLOCKED = "不允許與 %s 交易（不在你的名單中）。",
+    SAY_TRADE_BLOCKED = "抱歉 %s，我在使用 GroupFound 外掛，只能與白名單中的玩家交易。",
     MSG_AH_BLOCKED = "拍賣場已被停用。",
     MSG_MAIL_SEND_BLOCKED = "不允許寄信給 %s（不在你的名單中）。",
     MSG_MAIL_TAKE_BLOCKED = "已封鎖來自 %s 的附件/金錢（不在你的名單中）。",
