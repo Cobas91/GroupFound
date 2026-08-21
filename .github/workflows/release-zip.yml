@@ -1,0 +1,78 @@
+name: Publish Release
+
+# Baut bei jedem veroeffentlichten GitHub Release automatisch eine
+# CurseForge-taugliche Zip (Ordner "GroupFound" auf oberster Ebene), haengt
+# sie als Release-Asset an und laedt sie zusaetzlich direkt ins bestehende
+# CurseForge-Projekt hoch. Manuelles "scripts/Package.ps1" + "gh release
+# upload" + manueller CurseForge-Upload sind damit fuer Releases nicht mehr
+# noetig - beim Release erstellen reicht Titel/Notes, der Rest passiert
+# automatisch.
+#
+# Setup: Repo-Secret "CURSEFORGE_TOKEN" muss gesetzt sein (API-Token von
+# https://www.curseforge.com/account/api-tokens), z.B. via
+# "gh secret set CURSEFORGE_TOKEN".
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  CURSEFORGE_PROJECT_ID: "1662256"
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read addon version from .toc
+        id: version
+        run: |
+          VERSION=$(grep -oP '(?<=## Version: ).*' GroupFound/GroupFound.toc | tr -d '\r')
+          if [ -z "$VERSION" ]; then
+            echo "Konnte Version nicht aus GroupFound/GroupFound.toc lesen" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Derive CurseForge game version from Interface number
+        id: game_version
+        run: |
+          IFACE=$(grep -oP '(?<=## Interface: ).*' GroupFound/GroupFound.toc | tr -d '\r')
+          if [ -z "$IFACE" ]; then
+            echo "Konnte Interface-Nummer nicht aus GroupFound/GroupFound.toc lesen" >&2
+            exit 1
+          fi
+          # z.B. 11509 -> "1.15.9" (dieselbe Umrechnung, die CurseForge fuer
+          # WoW-Spielversionen erwartet).
+          VERSION=$(printf '%d.%d.%d' "$((10#$IFACE / 10000))" "$(((10#$IFACE % 10000) / 100))" "$((10#$IFACE % 100))")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build CurseForge zip
+        run: |
+          mkdir -p dist
+          zip -r "dist/GroupFound-${{ steps.version.outputs.version }}.zip" GroupFound
+
+      - name: Upload zip to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "dist/GroupFound-${{ steps.version.outputs.version }}.zip" \
+            --clobber
+
+      - name: Upload to CurseForge
+        uses: itsmeow/curseforge-upload@v3
+        with:
+          token: ${{ secrets.CURSEFORGE_TOKEN }}
+          project_id: ${{ env.CURSEFORGE_PROJECT_ID }}
+          game_endpoint: "wow"
+          file_path: "dist/GroupFound-${{ steps.version.outputs.version }}.zip"
+          display_name: "GroupFound ${{ steps.version.outputs.version }}"
+          game_versions: ${{ steps.game_version.outputs.version }}
+          release_type: ${{ github.event.release.prerelease && 'beta' || 'release' }}
+          changelog: ${{ github.event.release.body }}
+          changelog_type: markdown
