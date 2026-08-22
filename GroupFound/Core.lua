@@ -124,25 +124,35 @@ end
 -- Handel (Trade-Fenster)
 ------------------------------------------------------------
 
--- Verhindert Chat-Spam, falls jemand mehrfach hintereinander einen Handel anfragt.
-local SAY_COOLDOWN = 10
-local lastSayTime = 0
+-- Hinweis: Eine automatische /say-Ankündigung an den blockierten Spieler wurde
+-- bewusst nicht umgesetzt. Blizzard blockiert SendChatMessage-Aufrufe, die auf
+-- CancelTrade() folgen, als "protected function" (ADDON_ACTION_BLOCKED) -
+-- vermutlich ein Schutz gegen Scam-/Spam-Bots mit genau diesem Muster (Handel
+-- abbrechen -> automatisch chatten). Das lässt sich nicht zuverlässig umgehen,
+-- ohne eine echte Nutzeraktion (Klick/Tastendruck) vorauszusetzen.
 
-local function HandleTradeShow()
-    local name, realm = UnitName("npc")
+local function EvaluateTrade(name, realm)
     if GroupFound.IsWhitelisted(name, realm) then
         return
     end
 
     GroupFound.Print(L.MSG_TRADE_BLOCKED:format(name or "?"))
+    CancelTrade()
+end
 
-    local now = GetTime()
-    if now - lastSayTime > SAY_COOLDOWN then
-        lastSayTime = now
-        SendChatMessage(L.SAY_TRADE_BLOCKED:format(name or ""), "SAY")
+local function HandleTradeShow()
+    local name, realm = UnitName("npc")
+    if name then
+        EvaluateTrade(name, realm)
+        return
     end
 
-    CancelTrade()
+    -- Handelt uns jemand anderes an (statt dass wir selbst den Handel starten),
+    -- ist der Name der "npc"-Unit im TRADE_SHOW-Moment manchmal noch nicht gesetzt.
+    -- Einen Frame später erneut versuchen, statt ohne Meldung "?" auszugeben.
+    C_Timer.After(0, function()
+        EvaluateTrade(UnitName("npc"))
+    end)
 end
 
 ------------------------------------------------------------
@@ -275,6 +285,10 @@ SlashCmdList["GROUPFOUND"] = function(msg)
                 DEFAULT_CHAT_FRAME:AddMessage("  - " .. entry.display)
             end
         end
+    elseif (cmd == "invite" or cmd == "inv") and rest ~= "" then
+        GroupFound.SendInvite(rest)
+    elseif cmd == "group" then
+        GroupFound.ToggleUI("members")
     else
         GroupFound.Print(L.MSG_USAGE_HEADER)
         DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_TOGGLE)
@@ -282,5 +296,7 @@ SlashCmdList["GROUPFOUND"] = function(msg)
         DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_ADD_TARGET)
         DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_REMOVE)
         DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_LIST)
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_INVITE)
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_GROUP)
     end
 end

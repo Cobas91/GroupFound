@@ -32,7 +32,7 @@ local function CreateButton()
     button:SetFrameStrata("MEDIUM")
     button:SetFrameLevel(8)
     button:SetClampedToScreen(true)
-    button:RegisterForClicks("LeftButtonUp")
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:RegisterForDrag("LeftButton")
 
     local overlay = button:CreateTexture(nil, "OVERLAY")
@@ -56,6 +56,8 @@ local function CreateButton()
     button:SetScript("OnClick", function(self, mouseButton)
         if mouseButton == "LeftButton" then
             GroupFound.ToggleUI()
+        elseif mouseButton == "RightButton" then
+            GroupFound.ToggleUI("members")
         end
     end)
 

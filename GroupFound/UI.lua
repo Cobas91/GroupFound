@@ -1,114 +1,78 @@
 -- GroupFound UI
--- Einstellungsfenster für die Whitelist, aufrufbar per /gf
+-- Hauptfenster, aufrufbar per /gf. Enthält zwei Tabs: Mitglieder (zusammengefasste
+-- Whitelist/Gruppen-Liste inkl. Inventar/Bank/Berufe-Detailansicht) und Historie
+-- (gemeinsame Fund-Historie). Tab-Inhalte werden in GroupUI.lua gebaut.
 -- Texte kommen aus Locales.lua (GroupFound.L), passend zur aktuellen Client-Sprache (GetLocale()).
 
 GroupFound = GroupFound or {}
 local L = GroupFound.L
 
-local ROW_HEIGHT = 22
-local ROW_WIDTH = 340
 local frame
 
-local function trim(s)
-    if not s then return "" end
-    return s:match("^%s*(.-)%s*$")
-end
-
 ------------------------------------------------------------
--- Zeilen (Whitelist-Einträge)
+-- Tab-Leiste (Mitglieder / Historie)
 ------------------------------------------------------------
 
-local function CreateRow(parent)
-    local row = CreateFrame("Frame", nil, parent)
-    row:SetSize(ROW_WIDTH, ROW_HEIGHT)
-    row:EnableMouse(true)
+local TAB_ORDER = { "members", "history" }
+local TAB_LABEL_KEYS = { members = "TAB_MEMBERS", history = "TAB_HISTORY" }
 
-    row.bg = row:CreateTexture(nil, "BACKGROUND")
-    row.bg:SetAllPoints()
-    row.bg:SetColorTexture(1, 1, 1, 0.03)
+local function CreateTabButton(parent)
+    local btn = CreateFrame("Button", nil, parent)
+    btn:SetHeight(26)
 
-    row.highlight = row:CreateTexture(nil, "HIGHLIGHT")
-    row.highlight:SetAllPoints()
-    row.highlight:SetColorTexture(1, 0.82, 0, 0.10)
+    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
+    btn.bg:SetAllPoints()
+    btn.bg:SetColorTexture(1, 1, 1, 0.03)
 
-    row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.text:SetPoint("LEFT", 6, 0)
-    row.text:SetJustifyH("LEFT")
-    row.text:SetWidth(ROW_WIDTH - 34)
+    btn.underline = btn:CreateTexture(nil, "ARTWORK")
+    btn.underline:SetPoint("BOTTOMLEFT", 0, 0)
+    btn.underline:SetPoint("BOTTOMRIGHT", 0, 0)
+    btn.underline:SetHeight(2)
+    btn.underline:SetColorTexture(1, 0.82, 0, 1)
+    btn.underline:Hide()
 
-    row.removeBtn = CreateFrame("Button", nil, row)
-    row.removeBtn:SetSize(16, 16)
-    row.removeBtn:SetPoint("RIGHT", -6, 0)
-    row.removeBtn:SetNormalFontObject("GameFontNormal")
-    row.removeBtn:SetHighlightFontObject("GameFontHighlight")
-    row.removeBtn:SetText("|cffff5555x|r")
-    row.removeBtn:SetScript("OnEnter", function(self)
-        row.highlight:Show()
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(L.REMOVE_TOOLTIP, 1, 1, 1)
-        GameTooltip:Show()
+    btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    btn.text:SetPoint("CENTER")
+
+    btn:SetScript("OnEnter", function()
+        if not btn.active then btn.bg:SetColorTexture(1, 1, 1, 0.08) end
     end)
-    row.removeBtn:SetScript("OnLeave", function()
-        row.highlight:Hide()
-        GameTooltip:Hide()
+    btn:SetScript("OnLeave", function()
+        if not btn.active then btn.bg:SetColorTexture(1, 1, 1, 0.03) end
     end)
 
-    row:SetScript("OnEnter", function() row.highlight:Show() end)
-    row:SetScript("OnLeave", function() row.highlight:Hide() end)
-    row.highlight:Hide()
-
-    return row
+    return btn
 end
 
-local rowPool = {}
+function GroupFound.SelectTab(tabName)
+    if not frame then return end
+    tabName = tabName or frame.activeTab or "members"
+    if not frame.panels[tabName] then tabName = "members" end
+    frame.activeTab = tabName
 
-local function GetRow(index, parent)
-    local row = rowPool[index]
-    if not row then
-        row = CreateRow(parent)
-        rowPool[index] = row
+    for name, panel in pairs(frame.panels) do
+        panel:SetShown(name == tabName)
     end
-    return row
+
+    for name, btn in pairs(frame.tabs) do
+        local active = (name == tabName)
+        btn.active = active
+        btn.underline:SetShown(active)
+        if active then
+            btn.bg:SetColorTexture(1, 0.82, 0, 0.16)
+            btn.text:SetTextColor(1, 0.82, 0)
+        else
+            btn.bg:SetColorTexture(1, 1, 1, 0.03)
+            btn.text:SetTextColor(0.8, 0.8, 0.8)
+        end
+    end
+
+    if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
+-- Alias fuer Aufrufer, die noch GroupFound.RefreshUI() erwarten (Core.lua add/remove).
 function GroupFound.RefreshUI()
-    if not frame or not frame:IsShown() then return end
-
-    local list = GroupFound.GetSortedList()
-    frame.countText:SetText(L.COUNT_FMT:format(#list))
-    frame.emptyText:SetShown(#list == 0)
-
-    for i, entry in ipairs(list) do
-        local row = GetRow(i, frame.content)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, -(i - 1) * ROW_HEIGHT)
-        row.text:SetText(entry.display)
-        row.bg:SetColorTexture(1, 1, 1, (i % 2 == 0) and 0.05 or 0.015)
-        row.removeBtn:SetScript("OnClick", function()
-            GroupFound.RemoveByKey(entry.key)
-            GroupFound.RefreshUI()
-        end)
-        row:Show()
-    end
-
-    for i = #list + 1, #rowPool do
-        rowPool[i]:Hide()
-    end
-
-    frame.content:SetHeight(math.max(1, #list * ROW_HEIGHT))
-end
-
-------------------------------------------------------------
--- Kleine Bauhelfer
-------------------------------------------------------------
-
-local function CreateDivider(parent, yOffset)
-    local line = parent:CreateTexture(nil, "ARTWORK")
-    line:SetColorTexture(1, 0.82, 0, 0.25)
-    line:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yOffset)
-    line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -18, yOffset)
-    line:SetHeight(1)
-    return line
+    if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
 ------------------------------------------------------------
@@ -117,7 +81,7 @@ end
 
 local function BuildFrame()
     frame = CreateFrame("Frame", "GroupFoundFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(420, 620)
+    frame:SetSize(460, 720)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
@@ -158,134 +122,65 @@ local function BuildFrame()
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
     closeBtn:SetScript("OnClick", function() frame:Hide() end)
 
-    -- Hinweistext
-    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    hint:SetPoint("TOPLEFT", 18, -58)
-    hint:SetPoint("TOPRIGHT", -18, -58)
-    hint:SetJustifyH("LEFT")
-    hint:SetText(L.HINT)
+    ------------------------------------------------------------
+    -- Tab-Leiste
+    ------------------------------------------------------------
+    local tabBar = CreateFrame("Frame", nil, frame)
+    tabBar:SetPoint("TOPLEFT", 18, -64)
+    tabBar:SetPoint("TOPRIGHT", -18, -64)
+    tabBar:SetHeight(26)
 
-    CreateDivider(frame, -98)
-
-    -- Listen-Kopfzeile
-    local listLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    listLabel:SetPoint("TOPLEFT", 18, -108)
-    listLabel:SetText(L.LIST_LABEL)
-
-    local countText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    countText:SetPoint("TOPRIGHT", -18, -108)
-    frame.countText = countText
-
-    -- Listenpanel (Inset) + ScrollFrame
-    local inset = CreateFrame("Frame", nil, frame, "InsetFrameTemplate")
-    inset:SetPoint("TOPLEFT", 16, -126)
-    inset:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", -16, -364)
-
-    local scrollFrame = CreateFrame("ScrollFrame", "GroupFoundScrollFrame", inset, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 6, -6)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 6)
-
-    local content = CreateFrame("Frame", nil, scrollFrame)
-    content:SetSize(ROW_WIDTH, 1)
-    scrollFrame:SetScrollChild(content)
-    frame.content = content
-
-    local emptyText = inset:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    emptyText:SetPoint("CENTER", inset, "CENTER", -10, 0)
-    emptyText:SetText(L.EMPTY_LIST)
-    emptyText:SetJustifyH("CENTER")
-    frame.emptyText = emptyText
-
-    -- Eingabefeld zum Hinzufügen. Ist es leer, wird stattdessen das aktuelle
-    -- Ziel verwendet (sofern es ein Spieler ist) - ein Button/Befehl für beides.
-    local editBox = CreateFrame("EditBox", "GroupFoundAddEditBox", frame, "InputBoxTemplate")
-    editBox:SetSize(250, 20)
-    editBox:SetPoint("TOPLEFT", inset, "BOTTOMLEFT", 8, -14)
-    editBox:SetAutoFocus(false)
-    frame.editBox = editBox
-
-    local function AddFromEditBoxOrTarget()
-        local text = editBox:GetText()
-        if text and trim(text) ~= "" then
-            if GroupFound.AddName(text) then
-                editBox:SetText("")
-                GroupFound.RefreshUI()
-            end
-        else
-            GroupFound.AddCurrentTarget()
-        end
-        editBox:ClearFocus()
+    frame.tabs = {}
+    local tabWidth = 424 / #TAB_ORDER
+    for i, tabName in ipairs(TAB_ORDER) do
+        local btn = CreateTabButton(tabBar)
+        btn:SetWidth(tabWidth)
+        btn:SetPoint("TOPLEFT", tabBar, "TOPLEFT", (i - 1) * tabWidth, 0)
+        btn.text:SetText(L[TAB_LABEL_KEYS[tabName]])
+        btn:SetScript("OnClick", function() GroupFound.SelectTab(tabName) end)
+        frame.tabs[tabName] = btn
     end
 
-    editBox:SetScript("OnEnterPressed", AddFromEditBoxOrTarget)
+    ------------------------------------------------------------
+    -- Panel-Container (nur eines gleichzeitig sichtbar)
+    ------------------------------------------------------------
+    local membersPanel = CreateFrame("Frame", nil, frame)
+    membersPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -90)
+    membersPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 12)
 
-    local addBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-    addBtn:SetSize(96, 22)
-    addBtn:SetPoint("LEFT", editBox, "RIGHT", 12, 0)
-    addBtn:SetText(L.ADD_BUTTON)
-    addBtn:SetScript("OnClick", AddFromEditBoxOrTarget)
+    local historyPanel = CreateFrame("Frame", nil, frame)
+    historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -90)
+    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 12)
+    historyPanel:Hide()
 
-    local addHint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    addHint:SetPoint("TOPLEFT", editBox, "BOTTOMLEFT", 0, -6)
-    addHint:SetWidth(340)
-    addHint:SetJustifyH("LEFT")
-    addHint:SetText(L.ADD_HINT)
+    frame.membersPanel = membersPanel
+    frame.historyPanel = historyPanel
+    frame.panels = { members = membersPanel, history = historyPanel }
 
-    -- Ab hier haengt alles relativ am vorherigen Element (top-down).
-    -- Jede Trennlinie/Textbox verwendet nur EINEN Ankerpunkt (plus SetWidth),
-    -- damit nichts überlappt und keine zwei Anker mit unterschiedlichem Y
-    -- an verschiedenen Eltern-Frames kollidieren.
-    local divider2 = CreateFrame("Frame", nil, frame)
-    divider2:SetPoint("TOPLEFT", addHint, "BOTTOMLEFT", 0, -12)
-    divider2:SetSize(384, 1)
-    local divider2Tex = divider2:CreateTexture(nil, "ARTWORK")
-    divider2Tex:SetAllPoints()
-    divider2Tex:SetColorTexture(1, 0.82, 0, 0.25)
+    ------------------------------------------------------------
+    -- Tab-Inhalte (GroupUI.lua)
+    ------------------------------------------------------------
+    if GroupFound.BuildMembersPanel then
+        GroupFound.BuildMembersPanel(membersPanel)
+    end
+    if GroupFound.BuildHistoryPanel then
+        GroupFound.BuildHistoryPanel(historyPanel)
+    end
 
-    -- Der Schutz ist immer aktiv - es gibt bewusst keine Ein/Aus-Schalter dafür,
-    -- ein Hardcore-Handelsschutz, den man selbst abschalten kann, waere sinnlos.
-    local statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    statusText:SetPoint("TOPLEFT", divider2, "BOTTOMLEFT", 6, -12)
-    statusText:SetWidth(372)
-    statusText:SetJustifyH("LEFT")
-    statusText:SetTextColor(0.3, 1, 0.3)
-    statusText:SetText(L.PROTECTION_ALWAYS_ON)
-
-    -- Trennlinie + Befehlsübersicht, an den Statustext gekettet (top-down),
-    -- damit hier nichts überlappen kann.
-    local divider3 = CreateFrame("Frame", nil, frame)
-    divider3:SetPoint("TOPLEFT", statusText, "BOTTOMLEFT", 0, -14)
-    divider3:SetSize(384, 1)
-    local divider3Tex = divider3:CreateTexture(nil, "ARTWORK")
-    divider3Tex:SetAllPoints()
-    divider3Tex:SetColorTexture(1, 0.82, 0, 0.25)
-
-    local cmdLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    cmdLabel:SetPoint("TOPLEFT", divider3, "BOTTOMLEFT", 6, -10)
-    cmdLabel:SetText(L.CMD_LABEL)
-
-    local cmdList = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cmdList:SetPoint("TOPLEFT", cmdLabel, "BOTTOMLEFT", 0, -6)
-    cmdList:SetWidth(384)
-    cmdList:SetJustifyH("LEFT")
-    cmdList:SetSpacing(3)
-    cmdList:SetText(
-        L.CMD_TOGGLE .. "\n" ..
-        L.CMD_ADD .. "\n" ..
-        L.CMD_ADD_TARGET .. "\n" ..
-        L.CMD_REMOVE .. "\n" ..
-        L.CMD_LIST
-    )
+    frame.activeTab = "members"
 end
 
-function GroupFound.ToggleUI()
+function GroupFound.ToggleUI(tabName)
     if not frame then
         BuildFrame()
     end
-    if frame:IsShown() then
+    if tabName then
+        frame:Show()
+        GroupFound.SelectTab(tabName)
+    elseif frame:IsShown() then
         frame:Hide()
     else
         frame:Show()
-        GroupFound.RefreshUI()
+        GroupFound.SelectTab(frame.activeTab or "members")
     end
 end

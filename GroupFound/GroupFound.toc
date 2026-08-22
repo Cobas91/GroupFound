@@ -11,11 +11,14 @@
 ## Notes-zhCN: 硬核交易保护 - 仅可与名单中的玩家交易、寄信及使用拍卖行。
 ## Notes-zhTW: 硬核交易保護 - 僅可與名單中的玩家交易、寄信及使用拍賣場。
 ## Author: Stephan
-## Version: 1.4.1
+## Version: 2.0.0
 ## SavedVariables: GroupFoundDB
+## SavedVariablesPerCharacter: GroupFoundCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Note_01
 
 Locales.lua
 Core.lua
+Comm.lua
 UI.lua
+GroupUI.lua
 Minimap.lua

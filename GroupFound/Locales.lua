@@ -14,7 +14,7 @@ GroupFound.L = L
 
 local defaults = {
     SUBTITLE = "Trade whitelist for Hardcore",
-    HINT = "Only players on this list can trade with you, send you mail, or receive mail attachments from you.",
+    HINT = "Trusted players: can trade/mail with you, and once mutual, share notable finds, bags, bank and professions.",
     PROTECTION_ALWAYS_ON = "Protection is always active and cannot be disabled.",
     LIST_LABEL = "Whitelist",
     COUNT_FMT = "%d players",
@@ -23,7 +23,7 @@ local defaults = {
     ADD_HINT = "Leave empty and click to add your current target.",
     CMD_LABEL = "Commands",
     REMOVE_TOOLTIP = "Remove from list",
-    MINIMAP_TOOLTIP = "Left-click: open/close the whitelist window",
+    MINIMAP_TOOLTIP = "Left-click: open/close the window\nRight-click: open the members tab",
 
     CMD_TOGGLE = "/gf - open/close window",
     CMD_ADD = "/gf add <name> - add player",
@@ -32,7 +32,6 @@ local defaults = {
     CMD_LIST = "/gf list - show list in chat",
 
     MSG_TRADE_BLOCKED = "Trade with %s is not allowed (not on your list).",
-    SAY_TRADE_BLOCKED = "Sorry %s, I'm using the GroupFound addon and can only trade with players on my whitelist.",
     MSG_AH_BLOCKED = "The auction house is disabled.",
     MSG_MAIL_SEND_BLOCKED = "Mail to %s is not allowed (not on your list).",
     MSG_MAIL_TAKE_BLOCKED = "Attachment/money from %s is blocked (not on your list).",
@@ -45,6 +44,65 @@ local defaults = {
     MSG_TARGET_NOT_PLAYER = "The current target is not a player.",
     MSG_TARGET_IS_SELF = "You cannot add yourself to the list.",
     MSG_TARGET_NAME_UNKNOWN = "Could not determine the target's name.",
+
+    -- Group / shared find history
+    TAB_WHITELIST = "Whitelist",
+    TAB_MEMBERS = "Members",
+    TAB_HISTORY = "History",
+
+    MEMBERS_EMPTY = "No group yet.\nInvite a fellow player below.",
+    HISTORY_EMPTY = "No finds yet.",
+    NO_GROUP_YET = "You are not in a group yet.",
+
+    INVITE_BUTTON = "Invite",
+    INVITE_HINT = "Enter a player name and click Invite.",
+    LEAVE_GROUP_BUTTON = "Leave group",
+    LEAVE_GROUP_TOOLTIP = "Leave the group",
+
+    JOINED_AGO_FMT = "joined %s ago",
+    FOUND_BY_FMT = "Found by %s",
+    ONLINE_STATUS_TOOLTIP = "Approximate presence: green if this member has been heard from recently.",
+
+    TIME_JUST_NOW = "just now",
+    TIME_MINUTES_FMT = "%d min ago",
+    TIME_HOURS_FMT = "%d h ago",
+    TIME_YESTERDAY = "yesterday",
+    TIME_DAYS_FMT = "%d days ago",
+    GOLD_LABEL = "Gold: %s",
+    GOLD_UNKNOWN = "Gold: unknown",
+    SECTION_PROFESSIONS_HINT = "Click a profession to show its recipes.",
+    SECTION_RECIPES_EMPTY = "No recipes known.",
+
+    POPUP_INVITE_TEXT = "%s invites you to link GroupFound groups.\nMembers automatically see each other's notable finds, bags, bank and professions.",
+    POPUP_INVITE_TEXT_WITH_MEMBERS = "%s invites you to a GroupFound group with: %s.\nMembers automatically see each other's rare+ finds, bags, bank and professions.",
+    POPUP_ACCEPT = "Accept",
+    POPUP_DECLINE = "Decline",
+
+    CMD_INVITE = "/gf invite <name> - invite a player to your group",
+    CMD_LEAVE = "/gf leave - leave your current group",
+    CMD_GROUP = "/gf group - open the group window",
+
+    MSG_INVITE_SENT = "Invite sent to %s.",
+    MSG_INVITE_ACCEPTED = "%s accepted your invite.",
+    MSG_INVITE_DECLINED = "%s declined your invite.",
+    MSG_ALREADY_IN_GROUP = "You are already in a group. Use /gf leave first.",
+    MSG_ALREADY_LINKED = "%s is already in your group.",
+    MSG_CANNOT_INVITE_SELF = "You cannot invite yourself.",
+    MSG_LEFT_GROUP = "You left the group.",
+    MSG_NO_GROUP = "You are not in a group.",
+
+    MEMBER_DETAIL_BACK = "< Back",
+    MEMBER_DETAIL_STAND_FMT = "As of %s",
+    MEMBER_DETAIL_NO_DATA = "No data received yet.",
+    MEMBER_ROW_CLICK_HINT = "Click to view inventory, bank and professions",
+
+    SECTION_INVENTORY = "Inventory",
+    SECTION_BANK = "Bank",
+    SECTION_PROFESSIONS = "Professions",
+    SECTION_INVENTORY_EMPTY = "No inventory data yet.",
+    SECTION_BANK_EMPTY = "No bank data yet (bank must be opened at least once).",
+    SECTION_PROFESSIONS_EMPTY = "No profession data yet.",
+    PROFESSION_LEVEL_FMT = "%s %d/%d",
 }
 
 for k, v in pairs(defaults) do
@@ -59,7 +117,7 @@ local overrides = {}
 
 overrides.deDE = {
     SUBTITLE = "Handels-Whitelist für Hardcore",
-    HINT = "Nur Spieler auf dieser Liste dürfen mit dir handeln, dir Post schicken oder Anhänge von dir empfangen.",
+    HINT = "Vertraute Spieler: dürfen mit dir handeln/Post schicken und teilen, sobald gegenseitig, nennenswerte Funde, Taschen, Bank und Berufe.",
     PROTECTION_ALWAYS_ON = "Der Schutz ist immer aktiv und kann nicht deaktiviert werden.",
     LIST_LABEL = "Whitelist",
     COUNT_FMT = "%d Spieler",
@@ -68,7 +126,7 @@ overrides.deDE = {
     ADD_HINT = "Leer lassen und klicken, um dein aktuelles Ziel hinzuzufügen.",
     CMD_LABEL = "Befehle",
     REMOVE_TOOLTIP = "Von der Liste entfernen",
-    MINIMAP_TOOLTIP = "Linksklick: Whitelist-Fenster öffnen/schließen",
+    MINIMAP_TOOLTIP = "Linksklick: Fenster öffnen/schließen\nRechtsklick: Mitglieder-Tab öffnen",
 
     CMD_TOGGLE = "/gf - Fenster öffnen/schließen",
     CMD_ADD = "/gf add <Name> - Spieler hinzufügen",
@@ -77,7 +135,6 @@ overrides.deDE = {
     CMD_LIST = "/gf list - Liste im Chat anzeigen",
 
     MSG_TRADE_BLOCKED = "Handel mit %s ist nicht erlaubt (nicht auf deiner Liste).",
-    SAY_TRADE_BLOCKED = "Sorry %s, ich benutze das GroupFound-Addon und kann nur mit Spielern auf meiner Liste handeln.",
     MSG_AH_BLOCKED = "Das Auktionshaus ist deaktiviert.",
     MSG_MAIL_SEND_BLOCKED = "Post an %s ist nicht erlaubt (nicht auf deiner Liste).",
     MSG_MAIL_TAKE_BLOCKED = "Anhang/Geld von %s wird blockiert (nicht auf deiner Liste).",
@@ -90,6 +147,65 @@ overrides.deDE = {
     MSG_TARGET_NOT_PLAYER = "Das aktuelle Ziel ist kein Spieler.",
     MSG_TARGET_IS_SELF = "Du kannst dich nicht selbst zur Liste hinzufügen.",
     MSG_TARGET_NAME_UNKNOWN = "Name des Ziels konnte nicht ermittelt werden.",
+
+    -- Gruppe / gemeinsame Fund-Historie
+    TAB_WHITELIST = "Whitelist",
+    TAB_MEMBERS = "Mitglieder",
+    TAB_HISTORY = "Historie",
+
+    MEMBERS_EMPTY = "Noch keine Gruppe.\nLade unten einen Mitspieler ein.",
+    HISTORY_EMPTY = "Noch keine Funde.",
+    NO_GROUP_YET = "Du bist noch in keiner Gruppe.",
+
+    INVITE_BUTTON = "Einladen",
+    INVITE_HINT = "Spielername eingeben und auf Einladen klicken.",
+    LEAVE_GROUP_BUTTON = "Gruppe verlassen",
+    LEAVE_GROUP_TOOLTIP = "Die Gruppe verlassen",
+
+    JOINED_AGO_FMT = "beigetreten vor %s",
+    FOUND_BY_FMT = "Gefunden von %s",
+    ONLINE_STATUS_TOOLTIP = "Näherungswert: grün, wenn zuletzt vor kurzem etwas von diesem Mitglied empfangen wurde.",
+
+    TIME_JUST_NOW = "gerade eben",
+    TIME_MINUTES_FMT = "vor %d Min",
+    TIME_HOURS_FMT = "vor %d Std",
+    TIME_YESTERDAY = "gestern",
+    TIME_DAYS_FMT = "vor %d Tagen",
+    GOLD_LABEL = "Gold: %s",
+    GOLD_UNKNOWN = "Gold: unbekannt",
+    SECTION_PROFESSIONS_HINT = "Beruf anklicken, um die Rezepte anzuzeigen.",
+    SECTION_RECIPES_EMPTY = "Keine Rezepte bekannt.",
+
+    POPUP_INVITE_TEXT = "%s lädt dich zu einer GroupFound-Gruppe ein.\nMitglieder sehen automatisch gegenseitig ihre nennenswerten Funde, Taschen, Bank und Berufe.",
+    POPUP_INVITE_TEXT_WITH_MEMBERS = "%s lädt dich zu einer GroupFound-Gruppe ein mit: %s.\nMitglieder sehen automatisch gegenseitig ihre Rare+-Funde, Taschen, Bank und Berufe.",
+    POPUP_ACCEPT = "Annehmen",
+    POPUP_DECLINE = "Ablehnen",
+
+    CMD_INVITE = "/gf invite <Name> - Spieler in deine Gruppe einladen",
+    CMD_LEAVE = "/gf leave - deine aktuelle Gruppe verlassen",
+    CMD_GROUP = "/gf group - Gruppenfenster öffnen",
+
+    MSG_INVITE_SENT = "Einladung an %s gesendet.",
+    MSG_INVITE_ACCEPTED = "%s hat deine Einladung angenommen.",
+    MSG_INVITE_DECLINED = "%s hat deine Einladung abgelehnt.",
+    MSG_ALREADY_IN_GROUP = "Du bist bereits in einer Gruppe. Nutze zuerst /gf leave.",
+    MSG_ALREADY_LINKED = "%s ist bereits in deiner Gruppe.",
+    MSG_CANNOT_INVITE_SELF = "Du kannst dich nicht selbst einladen.",
+    MSG_LEFT_GROUP = "Du hast die Gruppe verlassen.",
+    MSG_NO_GROUP = "Du bist in keiner Gruppe.",
+
+    MEMBER_DETAIL_BACK = "< Zurück",
+    MEMBER_DETAIL_STAND_FMT = "Stand: %s",
+    MEMBER_DETAIL_NO_DATA = "Noch keine Daten empfangen.",
+    MEMBER_ROW_CLICK_HINT = "Klicken für Inventar, Bank und Berufe",
+
+    SECTION_INVENTORY = "Inventar",
+    SECTION_BANK = "Bank",
+    SECTION_PROFESSIONS = "Berufe",
+    SECTION_INVENTORY_EMPTY = "Noch keine Inventar-Daten.",
+    SECTION_BANK_EMPTY = "Noch keine Bank-Daten (Bank muss mindestens einmal geöffnet worden sein).",
+    SECTION_PROFESSIONS_EMPTY = "Noch keine Berufs-Daten.",
+    PROFESSION_LEVEL_FMT = "%s %d/%d",
 }
 
 overrides.frFR = {
@@ -112,7 +228,6 @@ overrides.frFR = {
     CMD_LIST = "/gf list - afficher la liste dans le chat",
 
     MSG_TRADE_BLOCKED = "L'échange avec %s n'est pas autorisé (absent de votre liste).",
-    SAY_TRADE_BLOCKED = "Désolé %s, j'utilise l'addon GroupFound et je ne peux échanger qu'avec les joueurs de ma liste blanche.",
     MSG_AH_BLOCKED = "L'hôtel des ventes est désactivé.",
     MSG_MAIL_SEND_BLOCKED = "Le courrier vers %s n'est pas autorisé (absent de votre liste).",
     MSG_MAIL_TAKE_BLOCKED = "Pièce jointe/argent de %s bloqué (absent de votre liste).",
@@ -147,7 +262,6 @@ overrides.esES = {
     CMD_LIST = "/gf list - mostrar la lista en el chat",
 
     MSG_TRADE_BLOCKED = "No se permite comerciar con %s (no está en tu lista).",
-    SAY_TRADE_BLOCKED = "Lo siento %s, uso el addon GroupFound y solo puedo comerciar con jugadores de mi lista blanca.",
     MSG_AH_BLOCKED = "La casa de subastas está desactivada.",
     MSG_MAIL_SEND_BLOCKED = "No se permite enviar correo a %s (no está en tu lista).",
     MSG_MAIL_TAKE_BLOCKED = "Se bloquea el adjunto/dinero de %s (no está en tu lista).",
@@ -184,7 +298,6 @@ overrides.ptBR = {
     CMD_LIST = "/gf list - mostrar lista no chat",
 
     MSG_TRADE_BLOCKED = "Comércio com %s não é permitido (não está na sua lista).",
-    SAY_TRADE_BLOCKED = "Desculpe %s, eu uso o addon GroupFound e só posso negociar com jogadores da minha lista branca.",
     MSG_AH_BLOCKED = "A casa de leilões está desativada.",
     MSG_MAIL_SEND_BLOCKED = "Correio para %s não é permitido (não está na sua lista).",
     MSG_MAIL_TAKE_BLOCKED = "Anexo/dinheiro de %s bloqueado (não está na sua lista).",
@@ -219,7 +332,6 @@ overrides.itIT = {
     CMD_LIST = "/gf list - mostra la lista in chat",
 
     MSG_TRADE_BLOCKED = "Lo scambio con %s non è consentito (non è nella tua lista).",
-    SAY_TRADE_BLOCKED = "Scusa %s, uso l'addon GroupFound e posso scambiare solo con i giocatori nella mia lista bianca.",
     MSG_AH_BLOCKED = "La casa d'aste è disattivata.",
     MSG_MAIL_SEND_BLOCKED = "L'invio di posta a %s non è consentito (non è nella tua lista).",
     MSG_MAIL_TAKE_BLOCKED = "Allegato/denaro da %s bloccato (non è nella tua lista).",
@@ -254,7 +366,6 @@ overrides.ruRU = {
     CMD_LIST = "/gf list - показать список в чате",
 
     MSG_TRADE_BLOCKED = "Торговля с %s запрещена (нет в вашем списке).",
-    SAY_TRADE_BLOCKED = "Извини, %s, я использую аддон GroupFound и могу торговать только с игроками из своего списка.",
     MSG_AH_BLOCKED = "Аукцион отключён.",
     MSG_MAIL_SEND_BLOCKED = "Отправка почты игроку %s запрещена (нет в вашем списке).",
     MSG_MAIL_TAKE_BLOCKED = "Вложение/деньги от %s заблокированы (нет в вашем списке).",
@@ -289,7 +400,6 @@ overrides.koKR = {
     CMD_LIST = "/gf list - 채팅에 목록 표시",
 
     MSG_TRADE_BLOCKED = "%s 님과의 거래는 허용되지 않습니다 (목록에 없음).",
-    SAY_TRADE_BLOCKED = "미안해요 %s, 저는 GroupFound 애드온을 사용 중이라 화이트리스트에 있는 플레이어와만 거래할 수 있어요.",
     MSG_AH_BLOCKED = "경매장이 비활성화되어 있습니다.",
     MSG_MAIL_SEND_BLOCKED = "%s 님에게 우편을 보낼 수 없습니다 (목록에 없음).",
     MSG_MAIL_TAKE_BLOCKED = "%s 님의 첨부물/돈이 차단되었습니다 (목록에 없음).",
@@ -324,7 +434,6 @@ overrides.zhCN = {
     CMD_LIST = "/gf list - 在聊天框显示名单",
 
     MSG_TRADE_BLOCKED = "不允许与 %s 交易（不在你的名单中）。",
-    SAY_TRADE_BLOCKED = "抱歉 %s，我在使用 GroupFound 插件，只能与白名单中的玩家交易。",
     MSG_AH_BLOCKED = "拍卖行已被禁用。",
     MSG_MAIL_SEND_BLOCKED = "不允许给 %s 寄信（不在你的名单中）。",
     MSG_MAIL_TAKE_BLOCKED = "已屏蔽来自 %s 的附件/金钱（不在你的名单中）。",
@@ -359,7 +468,6 @@ overrides.zhTW = {
     CMD_LIST = "/gf list - 在聊天視窗顯示名單",
 
     MSG_TRADE_BLOCKED = "不允許與 %s 交易（不在你的名單中）。",
-    SAY_TRADE_BLOCKED = "抱歉 %s，我在使用 GroupFound 外掛，只能與白名單中的玩家交易。",
     MSG_AH_BLOCKED = "拍賣場已被停用。",
     MSG_MAIL_SEND_BLOCKED = "不允許寄信給 %s（不在你的名單中）。",
     MSG_MAIL_TAKE_BLOCKED = "已封鎖來自 %s 的附件/金錢（不在你的名單中）。",
