@@ -531,7 +531,7 @@ local function RenderMemberDetail(key)
                 local recipeIDs = snap.recipes and snap.recipes[p.name]
                 local names = {}
                 for _, spellID in ipairs(recipeIDs or {}) do
-                    local spellName = GetSpellInfo(spellID)
+                    local spellName = GroupFound.GetSpellName(spellID)
                     if spellName then table.insert(names, spellName) end
                 end
 

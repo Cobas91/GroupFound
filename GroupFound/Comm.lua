@@ -484,6 +484,21 @@ end
 -- dort stehen die Berufe im Faehigkeiten-Fenster (GetSkillLineInfo) und die Rezepte sind
 -- nur bei geoeffnetem Berufe-Fenster lesbar (GetTradeSkill*/GetCraft*).
 local KNOWN_PROFESSION_SPELLS = { 2259, 2018, 7411, 4036, 2108, 2575, 2366, 8613, 3908, 2550, 3273, 7620 }
+local ENGLISH_PROFESSION_NAMES = {
+    "Alchemy", "Blacksmithing", "Enchanting", "Engineering", "Herbalism", "Leatherworking",
+    "Mining", "Skinning", "Tailoring", "Cooking", "First Aid", "Fishing",
+}
+
+-- GetSpellInfo wurde in neueren Clients nach C_Spell.GetSpellInfo verschoben.
+function GroupFound.GetSpellName(spellID)
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if type(info) == "table" then return info.name end
+        if type(info) == "string" then return info end
+    end
+    if GetSpellInfo then return (GetSpellInfo(spellID)) end
+    return nil
+end
 
 local function ReadSkillLines()
     local lines = {}
@@ -523,9 +538,10 @@ end
 local function CollectSkillLineProfessions(lines)
     local knownNames = {}
     for _, spellID in ipairs(KNOWN_PROFESSION_SPELLS) do
-        local spellName = GetSpellInfo and GetSpellInfo(spellID)
+        local spellName = GroupFound.GetSpellName(spellID)
         if spellName then knownNames[spellName] = true end
     end
+    for _, name in ipairs(ENGLISH_PROFESSION_NAMES) do knownNames[name] = true end
 
     local blocks = {}
     local current
@@ -549,6 +565,17 @@ local function CollectSkillLineProfessions(lines)
         if isProfessionBlock then
             for _, entry in ipairs(block.entries) do
                 if entry.maxRank > 1 then
+                    table.insert(professions, { name = entry.name, level = entry.rank, maxLevel = entry.maxRank })
+                end
+            end
+        end
+    end
+
+    -- Letzter Ausweg (Kopfzeilen nicht erkennbar): jede Fertigkeit mit bekanntem Berufsnamen.
+    if #professions == 0 then
+        for _, block in ipairs(blocks) do
+            for _, entry in ipairs(block.entries) do
+                if entry.maxRank > 1 and knownNames[entry.name] then
                     table.insert(professions, { name = entry.name, level = entry.rank, maxLevel = entry.maxRank })
                 end
             end
@@ -597,7 +624,8 @@ local function CaptureProfessionsImpl()
                 end
             end
         end
-    else
+    end
+    if #professions == 0 then
         professions = CollectSkillLineProfessions(ReadSkillLines())
     end
     for _, p in ipairs(professions) do profNames[p.name] = true end
@@ -710,6 +738,52 @@ function GroupFound.CaptureOpenRecipes()
     snap.recipesUpdatedAt = time()
     GroupFound.PushSnapshotKind("RECIPES")
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
+end
+
+-- /gf debug: gibt aus, was die Berufs-Erkennung sieht und was von anderen Mitgliedern
+-- angekommen ist (zur Fehlersuche, da sich Classic-Clients bei Berufen unterscheiden).
+function GroupFound.DebugSync()
+    local function out(text) DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffGF debug:|r " .. text) end
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    out("GroupFound " .. tostring(getMeta and getMeta("GroupFound", "Version")))
+    out(("API: GetProfessions=%s GetNumSkillLines=%s GetSpellInfo=%s C_Spell=%s TradeSkill=%s Craft=%s"):format(
+        tostring(GetProfessions ~= nil), tostring(GetNumSkillLines ~= nil), tostring(GetSpellInfo ~= nil),
+        tostring(C_Spell ~= nil and C_Spell.GetSpellInfo ~= nil), tostring(GetNumTradeSkills ~= nil),
+        tostring(GetNumCrafts ~= nil)))
+
+    local okLines, lines = pcall(ReadSkillLines)
+    if not okLines then out("ReadSkillLines error: " .. tostring(lines)) lines = {} end
+    out("skill lines: " .. #lines)
+    for i, line in ipairs(lines) do
+        if i > 45 then out("  ...") break end
+        out(("  %s%s %s/%s"):format(line.header and "[H] " or "", tostring(line.name), line.rank, line.maxRank))
+    end
+    local okProf, detected = pcall(CollectSkillLineProfessions, lines)
+    if okProf then
+        local names = {}
+        for _, p in ipairs(detected) do table.insert(names, p.name .. " " .. p.level .. "/" .. p.maxLevel) end
+        out("detected professions: " .. (#names > 0 and table.concat(names, ", ") or "none"))
+    else
+        out("CollectSkillLineProfessions error: " .. tostring(detected))
+    end
+
+    if not GroupFoundCharDB then return end
+    local selfSnap = GroupFoundCharDB.snapshots[NormalizeKey(GetSelfFullName())]
+    out(("own snapshot: professions=%d recipes=%s gold=%s"):format(
+        selfSnap and selfSnap.professions and #selfSnap.professions or 0,
+        selfSnap and selfSnap.recipes and RecipesSignature(selfSnap.recipes) or "-",
+        tostring(selfSnap and selfSnap.gold)))
+    out("send queue: " .. #outbox)
+    for _, entry in ipairs(GroupFound.GetSortedList()) do
+        local snap = GroupFoundCharDB.snapshots[entry.key]
+        local age = snap and snap.profUpdatedAt and (time() - snap.profUpdatedAt) or nil
+        out(("member %s: professions=%d (age %s) recipes=%s gold=%s bags=%s"):format(
+            entry.display,
+            snap and snap.professions and #snap.professions or 0,
+            age and (age .. "s") or "never",
+            snap and snap.recipes and RecipesSignature(snap.recipes) or "-",
+            tostring(snap and snap.gold), tostring(snap and snap.bagsUpdatedAt ~= nil)))
+    end
 end
 
 function GroupFound.CaptureGold()

@@ -299,6 +299,9 @@ SlashCmdList["GROUPFOUND"] = function(msg)
         GroupFound.SendInvite(rest)
     elseif cmd == "group" then
         GroupFound.ToggleUI("members")
+    elseif cmd == "debug" then
+        GroupFound.CaptureProfessions()
+        GroupFound.DebugSync()
     else
         GroupFound.Print(L.MSG_USAGE_HEADER)
         DEFAULT_CHAT_FRAME:AddMessage("  " .. L.CMD_TOGGLE)

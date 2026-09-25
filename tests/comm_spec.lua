@@ -248,4 +248,6 @@ assert(#selfSnap.recipes.Blacksmithing == 2 and selfSnap.recipes.Blacksmithing[1
 GroupFound.CaptureProfessions()
 assert(#GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Blacksmithing == 2, "recipes survive recapture")
 
+GroupFound.DebugSync()
+
 print("comm_spec: passed")
