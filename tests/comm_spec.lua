@@ -183,4 +183,69 @@ assert(bobSnap.bank[2589] == 5 and bobSnap.bankLinks[2589] == nil)
 assert(bobSnap.bankLinks[19870] == "item:19870:0:0:0:0:0:1234:5678")
 assert(bobSnap.bankLinks[3] == nil)
 
+-- Classic Era: professions come from the skill window (even with collapsed headers) and
+-- recipes from the open trade skill window.
+local skillTree = {
+    { name = "Class Skills", header = true, expanded = true, children = { { name = "Defense", rank = 1, max = 5 } } },
+    { name = "Professions", header = true, expanded = false, children = {
+        { name = "Mining", rank = 150, max = 225 }, { name = "Blacksmithing", rank = 100, max = 150 } } },
+    { name = "Secondary Skills", header = true, expanded = true, children = { { name = "Cooking", rank = 50, max = 75 } } },
+    { name = "Weapon Skills", header = true, expanded = true, children = { { name = "Swords", rank = 100, max = 300 } } },
+}
+local function visibleSkillLines()
+    local list = {}
+    for hi, h in ipairs(skillTree) do
+        table.insert(list, { h = hi })
+        if h.expanded then
+            for ci = 1, #h.children do table.insert(list, { h = hi, c = ci }) end
+        end
+    end
+    return list
+end
+function GetNumSkillLines() return #visibleSkillLines() end
+function GetSkillLineInfo(i)
+    local e = visibleSkillLines()[i]
+    if not e then return end
+    if not e.c then
+        local h = skillTree[e.h]
+        return h.name, 1, h.expanded and 1 or nil
+    end
+    local child = skillTree[e.h].children[e.c]
+    return child.name, nil, nil, child.rank, 0, 0, child.max
+end
+function ExpandSkillHeader(i)
+    local e = visibleSkillLines()[i]
+    skillTree[e.h].expanded = true
+end
+function CollapseSkillHeader(i)
+    local e = visibleSkillLines()[i]
+    skillTree[e.h].expanded = false
+end
+local spellNames = { [2575] = "Mining", [2018] = "Blacksmithing", [2550] = "Cooking" }
+function GetSpellInfo(id) return spellNames[id] end
+
+sent = {}
+GroupFound.CaptureProfessions()
+local selfSnap = GroupFound.GetMemberSnapshot("alice-myrealm")
+assert(#selfSnap.professions == 3, "expected Mining, Blacksmithing, Cooking")
+assert(selfSnap.professions[1].name == "Mining" and selfSnap.professions[1].level == 150)
+assert(selfSnap.professions[3].name == "Cooking")
+assert(skillTree[2].expanded == false, "collapsed header must be restored")
+flush()
+local sawProf = false
+for _, entry in ipairs(sent) do
+    if entry.message:match("^SNAP\1PROF") then sawProf = true end
+end
+assert(sawProf, "profession snapshot must be sent")
+
+function GetTradeSkillLine() return "Blacksmithing", 100, 150 end
+function GetNumTradeSkills() return 3 end
+function GetTradeSkillInfo(i) return "x", (i == 1) and "header" or "optimal" end
+function GetTradeSkillRecipeLink(i) return "|cffffd000|Henchant:" .. (2660 + i) .. "|h[Recipe]|h|r" end
+GroupFound.CaptureOpenRecipes()
+selfSnap = GroupFound.GetMemberSnapshot("alice-myrealm")
+assert(#selfSnap.recipes.Blacksmithing == 2 and selfSnap.recipes.Blacksmithing[1] == 2662)
+GroupFound.CaptureProfessions()
+assert(#GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Blacksmithing == 2, "recipes survive recapture")
+
 print("comm_spec: passed")

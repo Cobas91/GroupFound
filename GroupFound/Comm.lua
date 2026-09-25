@@ -479,13 +479,110 @@ function GroupFound.CaptureBank()
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
--- Rezepte werden ueber die Spellbook-Tabs ermittelt (GetNumSpellTabs/GetSpellTabInfo),
--- nicht ueber GetProfessionInfo's spellOffset/numAbilities - letzteres zeigte sich beim
--- Live-Test als unzuverlaessig (Rezepte fehlten). Der Tab-Name eines Spellbook-Tabs
--- entspricht dem Berufsnamen; das ist der etablierte, robuste Ansatz.
+-- Berufe: Retail/BCC/MoP-Classic liefern sie ueber GetProfessions (plus Rezepte als
+-- Spellbook-Tabs). Classic Era hat weder GetProfessions noch Berufs-Tabs im Zauberbuch:
+-- dort stehen die Berufe im Faehigkeiten-Fenster (GetSkillLineInfo) und die Rezepte sind
+-- nur bei geoeffnetem Berufe-Fenster lesbar (GetTradeSkill*/GetCraft*).
+local KNOWN_PROFESSION_SPELLS = { 2259, 2018, 7411, 4036, 2108, 2575, 2366, 8613, 3908, 2550, 3273, 7620 }
+
+local function ReadSkillLines()
+    local lines = {}
+    if not (GetNumSkillLines and GetSkillLineInfo) then return lines end
+
+    -- Eingeklappte Kopfzeilen verbergen ihre Eintraege; kurz aufklappen und danach wieder
+    -- einklappen (von unten nach oben, damit die Indizes stabil bleiben).
+    local collapsed = {}
+    if ExpandSkillHeader and CollapseSkillHeader then
+        for i = GetNumSkillLines(), 1, -1 do
+            local name, isHeader, isExpanded = GetSkillLineInfo(i)
+            if isHeader and not isExpanded then
+                collapsed[name] = true
+                ExpandSkillHeader(i)
+            end
+        end
+    end
+
+    local total = GetNumSkillLines()
+    for i = 1, total do
+        local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
+        table.insert(lines, { name = name, header = isHeader and true or false, rank = rank or 0, maxRank = maxRank or 0 })
+    end
+
+    if next(collapsed) then
+        for i = total, 1, -1 do
+            local name, isHeader = GetSkillLineInfo(i)
+            if isHeader and collapsed[name] then CollapseSkillHeader(i) end
+        end
+    end
+    return lines
+end
+
+-- Erkennt den Berufe-Block ohne feste Uebersetzungstabelle: entweder traegt die Kopfzeile
+-- den lokalisierten Namen (TRADE_SKILLS/SECONDARY_SKILLS) oder der Block enthaelt einen
+-- bekannten Berufs-Zauber (Name kommt aus GetSpellInfo, ist also lokalisiert).
+local function CollectSkillLineProfessions(lines)
+    local knownNames = {}
+    for _, spellID in ipairs(KNOWN_PROFESSION_SPELLS) do
+        local spellName = GetSpellInfo and GetSpellInfo(spellID)
+        if spellName then knownNames[spellName] = true end
+    end
+
+    local blocks = {}
+    local current
+    for _, line in ipairs(lines) do
+        if line.header then
+            current = { header = line.name, entries = {} }
+            table.insert(blocks, current)
+        elseif current and line.name then
+            table.insert(current.entries, line)
+        end
+    end
+
+    local professions = {}
+    for _, block in ipairs(blocks) do
+        local isProfessionBlock = block.header == TRADE_SKILLS or block.header == SECONDARY_SKILLS
+        if not isProfessionBlock then
+            for _, entry in ipairs(block.entries) do
+                if knownNames[entry.name] then isProfessionBlock = true break end
+            end
+        end
+        if isProfessionBlock then
+            for _, entry in ipairs(block.entries) do
+                if entry.maxRank > 1 then
+                    table.insert(professions, { name = entry.name, level = entry.rank, maxLevel = entry.maxRank })
+                end
+            end
+        end
+    end
+    return professions
+end
+
+local lastProfSignature = ""
+local lastRecipeSignature = ""
+
+local function ProfessionsSignature(professions)
+    local parts = {}
+    for _, p in ipairs(professions) do
+        table.insert(parts, p.name .. ":" .. p.level .. ":" .. p.maxLevel)
+    end
+    return table.concat(parts, ";")
+end
+
+local function RecipesSignature(recipes)
+    local names = {}
+    for name in pairs(recipes) do table.insert(names, name) end
+    table.sort(names)
+    local parts = {}
+    for _, name in ipairs(names) do
+        table.insert(parts, name .. "=" .. #recipes[name])
+    end
+    return table.concat(parts, ";")
+end
+
 local function CaptureProfessionsImpl()
     local professions = {}
     local recipes = {}
+    local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
 
     -- pairs() statt ipairs(): GetProfessions() kann Luecken in der Mitte liefern
     -- (z.B. keine Erstberufe, aber Kochen) - ipairs wuerde beim ersten nil abbrechen.
@@ -497,23 +594,18 @@ local function CaptureProfessionsImpl()
                 local name, _, skillLevel, maxSkillLevel = GetProfessionInfo(index)
                 if name then
                     table.insert(professions, { name = name, level = skillLevel or 0, maxLevel = maxSkillLevel or 0 })
-                    profNames[name] = true
                 end
             end
         end
-    elseif GetNumSkillLines and GetSkillLineInfo then
-        -- Clients ohne GetProfessions: Berufe stehen im Faehigkeiten-Fenster unter den
-        -- Kopfzeilen "Berufe"/"Nebenberufe".
-        local inProfessionHeader = false
-        for i = 1, GetNumSkillLines() do
-            local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
-            if isHeader then
-                inProfessionHeader = (name == TRADE_SKILLS or name == SECONDARY_SKILLS)
-            elseif inProfessionHeader and name then
-                table.insert(professions, { name = name, level = rank or 0, maxLevel = maxRank or 0 })
-                profNames[name] = true
-            end
-        end
+    else
+        professions = CollectSkillLineProfessions(ReadSkillLines())
+    end
+    for _, p in ipairs(professions) do profNames[p.name] = true end
+
+    -- Bereits gelesene Rezepte (aus dem Berufe-Fenster) bleiben erhalten, solange der
+    -- Beruf noch gelernt ist.
+    for name, ids in pairs(snap.recipes or {}) do
+        if profNames[name] then recipes[name] = ids end
     end
 
     if next(profNames) and GetNumSpellTabs and GetSpellTabInfo then
@@ -539,22 +631,85 @@ local function CaptureProfessionsImpl()
         end
     end
 
-    local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
+    local profSignature = ProfessionsSignature(professions)
+    local recipeSignature = RecipesSignature(recipes)
+    local profChanged = profSignature ~= lastProfSignature
+    local recipesChanged = recipeSignature ~= lastRecipeSignature
+    lastProfSignature = profSignature
+    lastRecipeSignature = recipeSignature
+
     snap.professions = professions
-    snap.profUpdatedAt = time()
     snap.recipes = recipes
-    snap.recipesUpdatedAt = time()
-    GroupFound.PushSnapshotKind("PROF")
-    GroupFound.PushSnapshotKind("RECIPES")
+    if profChanged or not snap.profUpdatedAt then
+        snap.profUpdatedAt = time()
+        GroupFound.PushSnapshotKind("PROF")
+    end
+    if recipesChanged or not snap.recipesUpdatedAt then
+        snap.recipesUpdatedAt = time()
+        GroupFound.PushSnapshotKind("RECIPES")
+    end
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
+-- Das kurze Auf-/Einklappen der Faehigkeiten-Kopfzeilen loest selbst SKILL_LINES_CHANGED
+-- aus; dieses Zeitfenster verhindert eine Endlosschleife aus Erfassung und Event.
+local skillEventsIgnoredUntil = 0
+
 function GroupFound.CaptureProfessions()
     if not GroupFoundCharDB then return end
+    skillEventsIgnoredUntil = (GetTime and GetTime() or 0) + 0.5
     local ok, err = pcall(CaptureProfessionsImpl)
     if not ok then
         GroupFound.Print("CaptureProfessions error: " .. tostring(err))
     end
+end
+
+-- Liest die Rezepte des gerade geoeffneten Berufe-Fensters (Classic Era). Handwerksberufe
+-- nutzen die TradeSkill-API, Verzauberkunst das Craft-Fenster.
+local function ReadOpenRecipes()
+    local profName, ids = nil, {}
+    if GetTradeSkillLine and GetNumTradeSkills and GetTradeSkillRecipeLink then
+        local name = GetTradeSkillLine()
+        if name and name ~= "UNKNOWN" then
+            profName = name
+            for i = 1, GetNumTradeSkills() do
+                local _, skillType = GetTradeSkillInfo(i)
+                if skillType ~= "header" then
+                    local id = (GetTradeSkillRecipeLink(i) or ""):match("enchant:(%d+)")
+                    if id then table.insert(ids, tonumber(id)) end
+                end
+            end
+        end
+    end
+    if #ids == 0 and GetCraftDisplaySkillLine and GetNumCrafts and GetCraftRecipeLink then
+        local name = GetCraftDisplaySkillLine()
+        if name and name ~= "" then
+            profName = name
+            for i = 1, GetNumCrafts() do
+                local _, _, craftType = GetCraftInfo(i)
+                if craftType ~= "header" then
+                    local id = (GetCraftRecipeLink(i) or ""):match("enchant:(%d+)")
+                    if id then table.insert(ids, tonumber(id)) end
+                end
+            end
+        end
+    end
+    return profName, ids
+end
+
+function GroupFound.CaptureOpenRecipes()
+    if not GroupFoundCharDB then return end
+    local ok, profName, ids = pcall(ReadOpenRecipes)
+    if not ok or not profName or #ids == 0 then return end
+    local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
+    snap.recipes = snap.recipes or {}
+    snap.recipes[profName] = ids
+    local signature = RecipesSignature(snap.recipes)
+    if signature == lastRecipeSignature then return end
+    lastRecipeSignature = signature
+    snap.recipesUpdatedAt = time()
+    GroupFound.PushSnapshotKind("RECIPES")
+    if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
 function GroupFound.CaptureGold()
@@ -961,6 +1116,11 @@ commEventFrame:RegisterEvent("BANKFRAME_CLOSED")
 commEventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 commEventFrame:RegisterEvent("SPELLS_CHANGED")
 commEventFrame:RegisterEvent("PLAYER_MONEY")
+-- Nicht in jedem Client vorhanden (Craft-Fenster nur Classic Era): unbekannte Events
+-- duerfen das Laden nicht abbrechen.
+for _, recipeEvent in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE" }) do
+    pcall(commEventFrame.RegisterEvent, commEventFrame, recipeEvent)
+end
 
 commEventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
@@ -992,6 +1152,10 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "BANKFRAME_CLOSED" then
         GroupFound.CaptureBank()
     elseif event == "SKILL_LINES_CHANGED" or event == "SPELLS_CHANGED" then
+        if (GetTime and GetTime() or 0) < skillEventsIgnoredUntil then return end
         ThrottledCapture("professions", GroupFound.CaptureProfessions)
+    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE"
+            or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
+        ThrottledCapture("recipes", GroupFound.CaptureOpenRecipes)
     end
 end)

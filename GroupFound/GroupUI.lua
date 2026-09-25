@@ -664,27 +664,6 @@ function GroupFound.BuildMembersPanel(parent)
     statusText:SetTextColor(0.3, 1, 0.3)
     statusText:SetText(L.PROTECTION_ALWAYS_ON)
 
-    local divider3 = CreateFlowDivider(listView, statusText, -6, -14, 384)
-
-    local cmdLabel = listView:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    cmdLabel:SetPoint("TOPLEFT", divider3, "BOTTOMLEFT", 6, -10)
-    cmdLabel:SetText(L.CMD_LABEL)
-
-    local cmdList = listView:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    cmdList:SetPoint("TOPLEFT", cmdLabel, "BOTTOMLEFT", 0, -6)
-    cmdList:SetWidth(384)
-    cmdList:SetJustifyH("LEFT")
-    cmdList:SetSpacing(3)
-    cmdList:SetText(
-        L.CMD_TOGGLE .. "\n" ..
-        L.CMD_ADD .. "\n" ..
-        L.CMD_ADD_TARGET .. "\n" ..
-        L.CMD_REMOVE .. "\n" ..
-        L.CMD_LIST .. "\n" ..
-        L.CMD_INVITE .. "\n" ..
-        L.CMD_GROUP
-    )
-
     ------------------------------------------------------------
     -- Detail-Ansicht
     ------------------------------------------------------------

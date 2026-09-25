@@ -71,7 +71,7 @@ local defaults = {
     GOLD_LABEL = "Gold: %s",
     GOLD_UNKNOWN = "Gold: unknown",
     SECTION_PROFESSIONS_HINT = "Click a profession to show its recipes.",
-    SECTION_RECIPES_EMPTY = "No recipes known.",
+    SECTION_RECIPES_EMPTY = "No recipes yet. They sync once the player has opened this profession window.",
 
     POPUP_INVITE_TEXT = "%s invites you to link GroupFound groups.\nMembers automatically see each other's notable finds, bags, bank and professions.",
     POPUP_INVITE_TEXT_WITH_MEMBERS = "%s invites you to a GroupFound group with: %s.\nMembers automatically see each other's rare+ finds, bags, bank and professions.",
@@ -175,7 +175,7 @@ overrides.deDE = {
     GOLD_LABEL = "Gold: %s",
     GOLD_UNKNOWN = "Gold: unbekannt",
     SECTION_PROFESSIONS_HINT = "Beruf anklicken, um die Rezepte anzuzeigen.",
-    SECTION_RECIPES_EMPTY = "Keine Rezepte bekannt.",
+    SECTION_RECIPES_EMPTY = "Noch keine Rezepte. Sie werden übertragen, sobald der Spieler das Berufsfenster geöffnet hat.",
 
     POPUP_INVITE_TEXT = "%s lädt dich zu einer GroupFound-Gruppe ein.\nMitglieder sehen automatisch gegenseitig ihre nennenswerten Funde, Taschen, Bank und Berufe.",
     POPUP_INVITE_TEXT_WITH_MEMBERS = "%s lädt dich zu einer GroupFound-Gruppe ein mit: %s.\nMitglieder sehen automatisch gegenseitig ihre Rare+-Funde, Taschen, Bank und Berufe.",

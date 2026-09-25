@@ -81,7 +81,7 @@ end
 
 local function BuildFrame()
     frame = CreateFrame("Frame", "GroupFoundFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(460, 720)
+    frame:SetSize(460, 590)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
@@ -117,6 +117,12 @@ local function BuildFrame()
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
     subtitle:SetText(L.SUBTITLE)
 
+    local versionText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    versionText:SetPoint("BOTTOMLEFT", 18, 16)
+    local getMetadata = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    local version = getMetadata and getMetadata("GroupFound", "Version")
+    versionText:SetText(version and ("v" .. version) or "")
+
     -- Schließen-Button
     local closeBtn = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     closeBtn:SetPoint("TOPRIGHT", -2, -2)
@@ -146,11 +152,11 @@ local function BuildFrame()
     ------------------------------------------------------------
     local membersPanel = CreateFrame("Frame", nil, frame)
     membersPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -90)
-    membersPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 12)
+    membersPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 32)
 
     local historyPanel = CreateFrame("Frame", nil, frame)
     historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -90)
-    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 12)
+    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 32)
     historyPanel:Hide()
 
     frame.membersPanel = membersPanel
