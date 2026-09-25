@@ -83,6 +83,7 @@ local defaults = {
     CMD_GROUP = "/gf group - open the group window",
 
     MSG_INVITE_SENT = "Invite sent to %s.",
+    MSG_INVITE_FAILED = "Could not send the invite to %s. Check the name or try again.",
     MSG_INVITE_ACCEPTED = "%s accepted your invite.",
     MSG_INVITE_DECLINED = "%s declined your invite.",
     MSG_ALREADY_IN_GROUP = "You are already in a group. Use /gf leave first.",
@@ -186,6 +187,7 @@ overrides.deDE = {
     CMD_GROUP = "/gf group - Gruppenfenster öffnen",
 
     MSG_INVITE_SENT = "Einladung an %s gesendet.",
+    MSG_INVITE_FAILED = "Einladung an %s konnte nicht gesendet werden. Prüfe den Namen oder versuche es erneut.",
     MSG_INVITE_ACCEPTED = "%s hat deine Einladung angenommen.",
     MSG_INVITE_DECLINED = "%s hat deine Einladung abgelehnt.",
     MSG_ALREADY_IN_GROUP = "Du bist bereits in einer Gruppe. Nutze zuerst /gf leave.",

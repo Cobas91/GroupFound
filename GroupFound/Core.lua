@@ -22,6 +22,14 @@ local function trim(s)
     return s:match("^%s*(.-)%s*$")
 end
 
+function GroupFound.NormalizeNameKey(raw)
+    local name, realm = strsplit("-", trim(raw), 2)
+    if realm and realm ~= "" then
+        return (name .. "-" .. realm:gsub("%s+", "")):lower()
+    end
+    return (name or ""):lower()
+end
+
 ------------------------------------------------------------
 -- SavedVariables / DB
 ------------------------------------------------------------
@@ -32,6 +40,13 @@ function GroupFound.InitDB()
     GroupFoundDB = GroupFoundDB or {}
     GroupFoundDB.whitelist = GroupFoundDB.whitelist or {}
     GroupFoundDB.minimapPos = GroupFoundDB.minimapPos or 200
+    local normalized = {}
+    for _, display in pairs(GroupFoundDB.whitelist) do
+        if type(display) == "string" then
+            normalized[GroupFound.NormalizeNameKey(display)] = display
+        end
+    end
+    GroupFoundDB.whitelist = normalized
 end
 
 ------------------------------------------------------------
@@ -43,7 +58,7 @@ end
 function GroupFound.AddName(raw)
     raw = trim(raw)
     if raw == "" then return false end
-    local key = raw:lower()
+    local key = GroupFound.NormalizeNameKey(raw)
     GroupFoundDB.whitelist[key] = raw
     return true
 end
@@ -56,7 +71,7 @@ end
 function GroupFound.RemoveName(raw)
     raw = trim(raw)
     if raw == "" then return end
-    GroupFoundDB.whitelist[raw:lower()] = nil
+    GroupFoundDB.whitelist[GroupFound.NormalizeNameKey(raw)] = nil
 end
 
 -- Fügt das aktuell anvisierte Ziel zur Whitelist hinzu, sofern es ein anderer Spieler ist.
@@ -107,15 +122,14 @@ end
 -- realm darf nil/"" sein (Standardfall: gleicher Realm wie der Spieler).
 function GroupFound.IsWhitelisted(name, realm)
     if not name or name == "" then return false end
-    local lname = name:lower()
+    local lname = GroupFound.NormalizeNameKey(name)
     if GroupFoundDB.whitelist[lname] then
         return true
     end
+    if not realm or realm == "" then realm = GetRealmName() end
     if realm and realm ~= "" then
-        local combined = (name .. "-" .. realm):lower()
-        if GroupFoundDB.whitelist[combined] then
-            return true
-        end
+        local combined = GroupFound.NormalizeNameKey(name .. "-" .. realm)
+        if GroupFoundDB.whitelist[combined] then return true end
     end
     return false
 end
@@ -182,12 +196,10 @@ end
 if type(SendMail) == "function" then
     local orig_SendMail = SendMail
     SendMail = function(recipient, subject, body, ...)
-        if recipient then
-            local n, r = strsplit("-", recipient, 2)
-            if not GroupFound.IsWhitelisted(n, r) then
-                GroupFound.Print(L.MSG_MAIL_SEND_BLOCKED:format(recipient))
-                return
-            end
+        local n, r = strsplit("-", recipient or "", 2)
+        if not GroupFound.IsWhitelisted(n, r) then
+            GroupFound.Print(L.MSG_MAIL_SEND_BLOCKED:format(recipient or "?"))
+            return
         end
         return orig_SendMail(recipient, subject, body, ...)
     end
@@ -204,12 +216,10 @@ local function WrapMailTake(fnName)
     if type(orig) ~= "function" then return end
     _G[fnName] = function(index, ...)
         local sender = GetInboxSender(index)
-        if sender then
-            local n, r = strsplit("-", sender, 2)
-            if not GroupFound.IsWhitelisted(n, r) then
-                GroupFound.Print(L.MSG_MAIL_TAKE_BLOCKED:format(sender))
-                return
-            end
+        local n, r = strsplit("-", sender or "", 2)
+        if not GroupFound.IsWhitelisted(n, r) then
+            GroupFound.Print(L.MSG_MAIL_TAKE_BLOCKED:format(sender or "?"))
+            return
         end
         return orig(index, ...)
     end
