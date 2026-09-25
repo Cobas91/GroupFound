@@ -639,7 +639,16 @@ local function RecipesSignature(recipes)
     table.sort(names)
     local parts = {}
     for _, name in ipairs(names) do
-        table.insert(parts, name .. "=" .. #recipes[name])
+        -- Anzahl plus Pruefsumme, damit auch ein anderer Inhalt bei gleicher Anzahl auffaellt.
+        local sum = 0
+        for i, recipe in ipairs(recipes[name]) do
+            if type(recipe) == "number" then
+                sum = (sum * 31 + recipe) % 2147483647
+            else
+                for j = 1, #recipe do sum = (sum * 31 + recipe:byte(j)) % 2147483647 end
+            end
+        end
+        table.insert(parts, name .. "=" .. #recipes[name] .. "#" .. sum)
     end
     return table.concat(parts, ";")
 end
@@ -747,13 +756,20 @@ local function ReadRecipeList(api)
         end
     end
 
+    -- Rezepte werden als Zauber-ID uebertragen (Name im Sprachclient des Betrachters);
+    -- laesst sich aus dem Link keine ID lesen, wird der Rezeptname selbst uebertragen.
     local ids = {}
     local total = api.num()
     for i = 1, total do
-        local _, kind = api.info(i)
+        local name, kind = api.info(i)
         if kind ~= "header" then
-            local id = (api.link(i) or ""):match("enchant:(%d+)")
-            if id then table.insert(ids, tonumber(id)) end
+            local link = api.link(i) or ""
+            local id = link:match("enchant:(%d+)") or link:match("spell:(%d+)")
+            if id then
+                table.insert(ids, tonumber(id))
+            elseif type(name) == "string" and name ~= "" then
+                table.insert(ids, (name:gsub("[;:|%c]", " ")))
+            end
         end
     end
 
@@ -800,6 +816,25 @@ local function ReadOpenRecipes()
         profName = GroupFound.GetSpellName(2575) or profName
     end
     return profName, ids or {}
+end
+
+-- Die Berufe-Events sind zwischen Client-Varianten uneinheitlich; zusaetzlich alle paar
+-- Sekunden pruefen, ob ein (anderes) Berufsfenster mit Rezepten vorliegt.
+local lastRecipePollKey
+
+local function PollRecipes()
+    local ok, key = pcall(function()
+        local tsLine = GetTradeSkillLine and GetTradeSkillLine()
+        local tsRows = GetNumTradeSkills and GetNumTradeSkills() or 0
+        local craftLine = GetCraftDisplaySkillLine and GetCraftDisplaySkillLine()
+        local craftRows = GetNumCrafts and GetNumCrafts() or 0
+        if tsRows == 0 and craftRows == 0 then return nil end
+        return table.concat({ tostring(tsLine), tsRows, tostring(craftLine), craftRows }, "|")
+    end)
+    if ok and key and key ~= lastRecipePollKey then
+        lastRecipePollKey = key
+        GroupFound.CaptureOpenRecipes()
+    end
 end
 
 function GroupFound.CaptureOpenRecipes()
@@ -852,6 +887,15 @@ function GroupFound.DebugSync()
         out(("tradeskill window: line=%s rows=%s | craft window: line=%s rows=%s"):format(
             tostring(GetTradeSkillLine and (GetTradeSkillLine())), tostring(GetNumTradeSkills and GetNumTradeSkills()),
             tostring(GetCraftDisplaySkillLine and (GetCraftDisplaySkillLine())), tostring(GetNumCrafts and GetNumCrafts())))
+        local shown = 0
+        for i = 1, (GetNumTradeSkills and GetNumTradeSkills() or 0) do
+            local rowName, rowType = GetTradeSkillInfo(i)
+            if rowType ~= "header" and shown < 3 then
+                shown = shown + 1
+                local link = GetTradeSkillRecipeLink and GetTradeSkillRecipeLink(i) or "-"
+                out(("  row %d: %s (%s) link=%s"):format(i, tostring(rowName), tostring(rowType), (tostring(link):gsub("|", "||"))))
+            end
+        end
         local tabs = {}
         for i = 1, (GetNumSpellTabs and GetNumSpellTabs() or 0) do
             local tabName, _, offset, numSpells = GetSpellTabInfo(i)
@@ -962,7 +1006,7 @@ local function BuildRecipesPayload(recipes)
     local parts = {}
     for profName, spellIDs in pairs(recipes or {}) do
         for _, spellID in ipairs(spellIDs) do
-            table.insert(parts, profName .. ":" .. spellID)
+            table.insert(parts, profName .. ":" .. (type(spellID) == "number" and spellID or ("n" .. spellID)))
         end
     end
     return table.concat(parts, ";")
@@ -977,12 +1021,15 @@ local function ParseRecipesPayload(payload)
     for entry in (payload or ""):gmatch("[^;]+") do
         local name, idsCSV = entry:match("^(.-):(.*)$")
         if name and name ~= "" then
-            local ids = {}
-            for id in idsCSV:gmatch("%d+") do
-                table.insert(ids, tonumber(id))
-            end
             map[name] = map[name] or {}
-            for _, id in ipairs(ids) do table.insert(map[name], id) end
+            if idsCSV:sub(1, 1) == "n" then
+                local recipeName = idsCSV:sub(2)
+                if recipeName ~= "" and #recipeName <= 100 then table.insert(map[name], recipeName) end
+            else
+                for id in idsCSV:gmatch("%d+") do
+                    table.insert(map[name], tonumber(id))
+                end
+            end
         end
     end
     return map
@@ -1299,7 +1346,8 @@ commEventFrame:RegisterEvent("SPELLS_CHANGED")
 commEventFrame:RegisterEvent("PLAYER_MONEY")
 -- Nicht in jedem Client vorhanden (Craft-Fenster nur Classic Era): unbekannte Events
 -- duerfen das Laden nicht abbrechen.
-for _, recipeEvent in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "CRAFT_SHOW", "CRAFT_UPDATE" }) do
+for _, recipeEvent in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_LIST_UPDATE",
+        "TRADE_SKILL_DATA_SOURCE_CHANGED", "CRAFT_SHOW", "CRAFT_UPDATE" }) do
     pcall(commEventFrame.RegisterEvent, commEventFrame, recipeEvent)
 end
 
@@ -1319,6 +1367,7 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
         end)
         -- Faehigkeiten-Daten sind kurz nach dem Login teils noch leer; erneut lesen
         -- (sendet nur, wenn sich etwas geaendert hat).
+        C_Timer.NewTicker(3, PollRecipes)
         C_Timer.After(15, GroupFound.CaptureProfessions)
         C_Timer.After(60, GroupFound.CaptureProfessions)
         C_Timer.NewTicker(GOSSIP_INTERVAL, function() GroupFound.GossipPush() end)
@@ -1339,8 +1388,8 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "SKILL_LINES_CHANGED" or event == "SPELLS_CHANGED" then
         if (GetTime and GetTime() or 0) < skillEventsIgnoredUntil then return end
         ThrottledCapture("professions", GroupFound.CaptureProfessions)
-    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE"
-            or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
+    elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE" or event == "TRADE_SKILL_LIST_UPDATE"
+            or event == "TRADE_SKILL_DATA_SOURCE_CHANGED" or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
         if (GetTime and GetTime() or 0) < recipeEventsIgnoredUntil then return end
         ThrottledCapture("recipes", GroupFound.CaptureOpenRecipes, 0.5)
     end

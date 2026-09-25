@@ -39,7 +39,11 @@ function StaticPopup_Show(_, _, _, data) popup = data end
 StaticPopupDialogs = {}
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
-C_Timer = { After = function(_, fn) table.insert(timers, fn) end, NewTicker = function() end }
+local tickers = {}
+C_Timer = {
+    After = function(_, fn) table.insert(timers, fn) end,
+    NewTicker = function(_, fn) table.insert(tickers, fn) end,
+}
 
 -- Runs queued timers (the paced send queue) until idle; each tick refills one send token.
 local function flush()
@@ -291,6 +295,43 @@ GroupFound.CaptureOpenRecipes()
 local leather = GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Leatherworking
 assert(leather and #leather == 3, "recipes in collapsed categories must be included")
 assert(tsTree[1].expanded == false and tsTree[2].expanded == true, "category state must be restored")
+
+-- The client may not fire the profession window events; the periodic poll must still read
+-- recipes, and must fall back to recipe names when links carry no spell ID.
+frames[2].onEvent(frames[2], "PLAYER_LOGIN")
+function GetTradeSkillLine() return "Blacksmithing", 100, 150 end
+local function tsRecipeName(i) return "Recipe " .. tsRows()[i].r end
+function GetTradeSkillInfo(i)
+    local row = tsRows()[i]
+    if not row.r then return tsTree[row.h].name, "header", 0, tsTree[row.h].expanded and 1 or nil end
+    return tsRecipeName(i), "optimal", 1, nil
+end
+function GetTradeSkillRecipeLink(i)
+    local row = tsRows()[i]
+    if row.r == 1 then return "|Hunknown:xyz|h[x]|h|r" end
+    return "|cffffd000|Hspell:" .. (4000 + row.r) .. "|h[x]|h|r"
+end
+local pollSnap = GroupFound.GetMemberSnapshot("alice-myrealm")
+pollSnap.recipes.Blacksmithing = nil
+now = now + 5
+for _, tick in ipairs(tickers) do tick() end
+sent = {}
+flush()
+local polled = GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Blacksmithing
+assert(polled and #polled == 3, "poll must capture recipes without any profession event")
+local strings, numbers = 0, 0
+for _, recipe in ipairs(polled) do
+    if type(recipe) == "string" then strings = strings + 1 else numbers = numbers + 1 end
+end
+assert(strings == 2 and numbers == 1, "two name fallbacks (rows without a spell link) plus one spell ID")
+for _, entry in ipairs(sent) do receive(entry.message, "Bob") end
+local bobRecipes = GroupFound.GetMemberSnapshot("bob-myrealm").recipes.Blacksmithing
+assert(bobRecipes and #bobRecipes == 3, "recipes must reach the other member")
+local bobNames = 0
+for _, recipe in ipairs(bobRecipes) do
+    if type(recipe) == "string" then bobNames = bobNames + 1 end
+end
+assert(bobNames == 2, "name entries must survive the payload round trip")
 
 -- A newer version announced by a member is reported once in chat.
 assert(GroupFound.IsNewerVersion("2.0.10", "2.0.9") and GroupFound.IsNewerVersion("2.1", "2.0.9"))

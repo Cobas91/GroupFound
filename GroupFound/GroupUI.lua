@@ -530,9 +530,12 @@ local function RenderMemberDetail(key)
             if isExpanded then
                 local recipeIDs = snap.recipes and snap.recipes[p.name]
                 local names = {}
-                for _, spellID in ipairs(recipeIDs or {}) do
-                    local spellName = GroupFound.GetSpellName(spellID)
-                    table.insert(names, spellName or ("#" .. spellID))
+                for _, recipe in ipairs(recipeIDs or {}) do
+                    if type(recipe) == "string" then
+                        table.insert(names, recipe)
+                    else
+                        table.insert(names, GroupFound.GetSpellName(recipe) or ("#" .. recipe))
+                    end
                 end
 
                 nextTextIndex = nextTextIndex + 1
