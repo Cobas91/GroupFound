@@ -321,7 +321,7 @@ local function GetBagSlotItem(bag, slot)
     if C_Container and C_Container.GetContainerItemInfo then
         local info = C_Container.GetContainerItemInfo(bag, slot)
         if info and info.itemID then
-            return info.itemID, info.stackCount or 1
+            return info.itemID, info.stackCount or 1, info.hyperlink
         end
         return nil
     end
@@ -330,7 +330,7 @@ local function GetBagSlotItem(bag, slot)
     local _, count = GetContainerItemInfo(bag, slot)
     local itemID = GetItemInfoInstant(itemLink)
     if not itemID then return nil end
-    return itemID, count or 1
+    return itemID, count or 1, itemLink
 end
 
 local function EnsureSnapshot(key)
@@ -341,17 +341,20 @@ end
 function GroupFound.CaptureBags()
     if not GroupFoundCharDB then return end
     local counts = {}
+    local links = {}
     for bag = 0, (NUM_BAG_SLOTS or 4) do
         local slots = GetBagNumSlots(bag) or 0
         for slot = 1, slots do
-            local itemID, count = GetBagSlotItem(bag, slot)
+            local itemID, count, link = GetBagSlotItem(bag, slot)
             if itemID then
                 counts[itemID] = (counts[itemID] or 0) + count
+                if link then links[itemID] = link end
             end
         end
     end
     local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
     snap.bags = counts
+    snap.bagLinks = links
     snap.bagsUpdatedAt = time()
     GroupFound.PushSnapshotKind("BAGS")
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
@@ -360,6 +363,7 @@ end
 function GroupFound.CaptureBank()
     if not GroupFoundCharDB then return end
     local counts = {}
+    local links = {}
     local bankBags = { -1 }
     for i = 1, (NUM_BANKBAGSLOTS or 7) do
         table.insert(bankBags, 4 + i) -- Bank-Taschen liegen ab Bag-ID 5
@@ -367,14 +371,16 @@ function GroupFound.CaptureBank()
     for _, bag in ipairs(bankBags) do
         local slots = GetBagNumSlots(bag) or 0
         for slot = 1, slots do
-            local itemID, count = GetBagSlotItem(bag, slot)
+            local itemID, count, link = GetBagSlotItem(bag, slot)
             if itemID then
                 counts[itemID] = (counts[itemID] or 0) + count
+                if link then links[itemID] = link end
             end
         end
     end
     local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
     snap.bank = counts
+    snap.bankLinks = links
     snap.bankUpdatedAt = time()
     GroupFound.PushSnapshotKind("BANK")
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
@@ -467,23 +473,37 @@ end
 -- Snapshot-Payloads (Versand/Empfang, chunked)
 ------------------------------------------------------------
 
-local function BuildCountsPayload(counts)
+-- Der Item-Link wird mitgeschickt, damit das Tooltip beim Empfänger die konkrete
+-- Ausprägung zeigen kann (z.B. den gewürfelten Bonus bei Items mit Zufallsverzauberung
+-- wie "Grunt's Belt") statt nur der Basis-itemID, die WoW ohne Link nur als generisches
+-- "<Random enchantment>" auflösen kann.
+local function BuildCountsPayload(counts, links)
     local parts = {}
     for itemID, count in pairs(counts or {}) do
-        table.insert(parts, itemID .. ":" .. count)
+        local link = links and links[itemID]
+        if link then
+            table.insert(parts, itemID .. ":" .. count .. ":" .. link)
+        else
+            table.insert(parts, itemID .. ":" .. count)
+        end
     end
     return table.concat(parts, ";")
 end
 
 local function ParseCountsPayload(payload)
     local counts = {}
+    local links = {}
     for entry in (payload or ""):gmatch("[^;]+") do
-        local itemID, count = entry:match("^(%d+):(%d+)$")
+        local itemID, count, link = entry:match("^(%d+):(%d+):(.+)$")
+        if not itemID then
+            itemID, count = entry:match("^(%d+):(%d+)$")
+        end
         if itemID then
             counts[tonumber(itemID)] = tonumber(count)
+            if link then links[tonumber(itemID)] = link end
         end
     end
-    return counts
+    return counts, links
 end
 
 local function BuildProfessionsPayload(professions)
@@ -579,9 +599,9 @@ function GroupFound.PushSnapshotKind(kind)
     if #targets == 0 then return end
 
     if kind == "BAGS" and snap.bagsUpdatedAt then
-        GroupFound.SendSnapshotChunks("BAGS", BuildCountsPayload(snap.bags), snap.bagsUpdatedAt, targets)
+        GroupFound.SendSnapshotChunks("BAGS", BuildCountsPayload(snap.bags, snap.bagLinks), snap.bagsUpdatedAt, targets)
     elseif kind == "BANK" and snap.bankUpdatedAt then
-        GroupFound.SendSnapshotChunks("BANK", BuildCountsPayload(snap.bank), snap.bankUpdatedAt, targets)
+        GroupFound.SendSnapshotChunks("BANK", BuildCountsPayload(snap.bank, snap.bankLinks), snap.bankUpdatedAt, targets)
     elseif kind == "PROF" and snap.profUpdatedAt then
         GroupFound.SendSnapshotChunks("PROF", BuildProfessionsPayload(snap.professions), snap.profUpdatedAt, targets)
     elseif kind == "RECIPES" and snap.recipesUpdatedAt then
@@ -597,10 +617,10 @@ function GroupFound.PushSnapshots(targets)
     if not snap then return end
 
     if snap.bagsUpdatedAt then
-        GroupFound.SendSnapshotChunks("BAGS", BuildCountsPayload(snap.bags), snap.bagsUpdatedAt, targets)
+        GroupFound.SendSnapshotChunks("BAGS", BuildCountsPayload(snap.bags, snap.bagLinks), snap.bagsUpdatedAt, targets)
     end
     if snap.bankUpdatedAt then
-        GroupFound.SendSnapshotChunks("BANK", BuildCountsPayload(snap.bank), snap.bankUpdatedAt, targets)
+        GroupFound.SendSnapshotChunks("BANK", BuildCountsPayload(snap.bank, snap.bankLinks), snap.bankUpdatedAt, targets)
     end
     if snap.profUpdatedAt then
         GroupFound.SendSnapshotChunks("PROF", BuildProfessionsPayload(snap.professions), snap.profUpdatedAt, targets)
@@ -651,10 +671,10 @@ local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunk
     local snap = EnsureSnapshot(memberKey)
 
     if kind == "BAGS" and updatedAt > (snap.bagsUpdatedAt or 0) then
-        snap.bags = ParseCountsPayload(fullPayload)
+        snap.bags, snap.bagLinks = ParseCountsPayload(fullPayload)
         snap.bagsUpdatedAt = updatedAt
     elseif kind == "BANK" and updatedAt > (snap.bankUpdatedAt or 0) then
-        snap.bank = ParseCountsPayload(fullPayload)
+        snap.bank, snap.bankLinks = ParseCountsPayload(fullPayload)
         snap.bankUpdatedAt = updatedAt
     elseif kind == "PROF" and updatedAt > (snap.profUpdatedAt or 0) then
         snap.professions = ParseProfessionsPayload(fullPayload)

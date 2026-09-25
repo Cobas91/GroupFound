@@ -85,12 +85,12 @@ local function CreateMemberRow(parent)
     row.dot:SetPoint("LEFT", 8, 0)
 
     row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.name:SetPoint("TOPLEFT", row.dot, "TOPRIGHT", 8, 2)
+    row.name:SetPoint("TOPLEFT", row, "TOPLEFT", 26, -4)
     row.name:SetJustifyH("LEFT")
     row.name:SetWidth(MEMBER_ROW_WIDTH - 66)
 
     row.sub = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    row.sub:SetPoint("BOTTOMLEFT", row.dot, "BOTTOMRIGHT", 8, -2)
+    row.sub:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 26, 4)
     row.sub:SetJustifyH("LEFT")
     row.sub:SetWidth(MEMBER_ROW_WIDTH - 66)
 
@@ -282,7 +282,11 @@ local function GetIconCell(index, parent)
         cell:SetScript("OnEnter", function(self)
             if self.itemID then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                GameTooltip:SetItemByID(self.itemID)
+                if self.itemLink then
+                    GameTooltip:SetHyperlink(self.itemLink)
+                else
+                    GameTooltip:SetItemByID(self.itemID)
+                end
                 GameTooltip:Show()
             end
         end)
@@ -309,6 +313,7 @@ local function ClearIconCells()
     for _, cell in ipairs(iconCellPool) do
         cell:Hide()
         cell.itemID = nil
+        cell.itemLink = nil
     end
 end
 
@@ -345,7 +350,7 @@ end
 
 -- Platziert ein fliessendes Icon-Grid unterhalb von anchorTo, gibt die Anzahl
 -- benoetigter Zeilen zurueck (fuer die Cursor-Fortschaltung des Aufrufers).
-local function PlaceIconGrid(parent, anchorTo, counts, yOffsetAfterAnchor)
+local function PlaceIconGrid(parent, anchorTo, counts, yOffsetAfterAnchor, links)
     local sortedIDs = {}
     for itemID in pairs(counts) do table.insert(sortedIDs, itemID) end
     table.sort(sortedIDs)
@@ -359,6 +364,7 @@ local function PlaceIconGrid(parent, anchorTo, counts, yOffsetAfterAnchor)
         nextIconIndex = nextIconIndex + 1
         local cell = GetIconCell(nextIconIndex, parent)
         cell.itemID = itemID
+        cell.itemLink = links and links[itemID]
         local iconTexture = GetItemIcon and GetItemIcon(itemID)
         cell.icon:SetTexture(iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
         local count = counts[itemID]
@@ -434,7 +440,7 @@ local function RenderMemberDetail(key)
 
     local bags = snap and snap.bags
     if bags and next(bags) then
-        local rows = PlaceIconGrid(content, cursor, bags, 6)
+        local rows = PlaceIconGrid(content, cursor, bags, 6, snap and snap.bagLinks)
         nextTextIndex = nextTextIndex + 1
         local spacer = GetTextRow(nextTextIndex, content)
         spacer:SetText("")
@@ -465,7 +471,7 @@ local function RenderMemberDetail(key)
 
     local bank = snap and snap.bank
     if bank and next(bank) then
-        local rows = PlaceIconGrid(content, cursor, bank, 6)
+        local rows = PlaceIconGrid(content, cursor, bank, 6, snap and snap.bankLinks)
         nextTextIndex = nextTextIndex + 1
         local spacer = GetTextRow(nextTextIndex, content)
         spacer:SetText("")
