@@ -95,6 +95,44 @@ local function FindPendingKey(sender)
 end
 
 local lastSeenAt = {}
+local memberVersions = {}
+
+local function GetAddonVersion()
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
+    return getMeta and getMeta(ADDON_NAME, "Version") or "?"
+end
+
+function GroupFound.GetMemberVersion(key)
+    return memberVersions[key]
+end
+
+-- Vergleicht "2.0.10" mit "2.0.9" numerisch je Segment; true, wenn a neuer ist als b.
+function GroupFound.IsNewerVersion(a, b)
+    local function parts(v)
+        local list = {}
+        for n in tostring(v or ""):gmatch("%d+") do table.insert(list, tonumber(n)) end
+        return list
+    end
+    local pa, pb = parts(a), parts(b)
+    if #pa == 0 or #pb == 0 then return false end
+    for i = 1, math.max(#pa, #pb) do
+        local x, y = pa[i] or 0, pb[i] or 0
+        if x ~= y then return x > y end
+    end
+    return false
+end
+
+-- Es gibt keinen Server, den man nach der neuesten Version fragen koennte: neuere
+-- Versionen werden daran erkannt, dass ein Gruppenmitglied sie meldet (HI-Nachricht).
+local notifiedVersion
+local function NotifyIfNewer(version)
+    local own = GetAddonVersion()
+    if version ~= notifiedVersion and GroupFound.IsNewerVersion(version, own)
+            and (not notifiedVersion or GroupFound.IsNewerVersion(version, notifiedVersion)) then
+        notifiedVersion = version
+        GroupFound.Print(L.MSG_NEW_VERSION:format(version, own))
+    end
+end
 
 local function TouchLastSeen(sender)
     local key = FindWhitelistKey(sender)
@@ -693,42 +731,86 @@ function GroupFound.CaptureProfessions()
 end
 
 -- Liest die Rezepte des gerade geoeffneten Berufe-Fensters (Classic Era). Handwerksberufe
--- nutzen die TradeSkill-API, Verzauberkunst das Craft-Fenster.
+-- nutzen die TradeSkill-API, Verzauberkunst das Craft-Fenster. Eingeklappte Kategorien
+-- verbergen ihre Rezepte und werden deshalb kurz aufgeklappt und wieder eingeklappt.
+local recipeEventsIgnoredUntil = 0
+
+local function ReadRecipeList(api)
+    local collapsed = {}
+    if api.expand and api.collapse then
+        for i = api.num(), 1, -1 do
+            local name, kind, expanded = api.info(i)
+            if kind == "header" and not expanded then
+                collapsed[name] = true
+                api.expand(i)
+            end
+        end
+    end
+
+    local ids = {}
+    local total = api.num()
+    for i = 1, total do
+        local _, kind = api.info(i)
+        if kind ~= "header" then
+            local id = (api.link(i) or ""):match("enchant:(%d+)")
+            if id then table.insert(ids, tonumber(id)) end
+        end
+    end
+
+    if next(collapsed) then
+        for i = total, 1, -1 do
+            local name, kind = api.info(i)
+            if kind == "header" and collapsed[name] then api.collapse(i) end
+        end
+    end
+    return ids
+end
+
 local function ReadOpenRecipes()
-    local profName, ids = nil, {}
+    local profName, ids
     if GetTradeSkillLine and GetNumTradeSkills and GetTradeSkillRecipeLink then
         local name = GetTradeSkillLine()
-        if name and name ~= "UNKNOWN" then
+        if name and name ~= "UNKNOWN" and GetNumTradeSkills() > 0 then
             profName = name
-            for i = 1, GetNumTradeSkills() do
-                local _, skillType = GetTradeSkillInfo(i)
-                if skillType ~= "header" then
-                    local id = (GetTradeSkillRecipeLink(i) or ""):match("enchant:(%d+)")
-                    if id then table.insert(ids, tonumber(id)) end
-                end
-            end
+            ids = ReadRecipeList({
+                num = GetNumTradeSkills,
+                info = function(i) local n, t, _, e = GetTradeSkillInfo(i) return n, t, e end,
+                link = GetTradeSkillRecipeLink,
+                expand = ExpandTradeSkillSubClass,
+                collapse = CollapseTradeSkillSubClass,
+            })
         end
     end
-    if #ids == 0 and GetCraftDisplaySkillLine and GetNumCrafts and GetCraftRecipeLink then
+    if (not ids or #ids == 0) and GetCraftDisplaySkillLine and GetNumCrafts and GetCraftRecipeLink then
         local name = GetCraftDisplaySkillLine()
-        if name and name ~= "" then
+        if name and name ~= "" and GetNumCrafts() > 0 then
             profName = name
-            for i = 1, GetNumCrafts() do
-                local _, _, craftType = GetCraftInfo(i)
-                if craftType ~= "header" then
-                    local id = (GetCraftRecipeLink(i) or ""):match("enchant:(%d+)")
-                    if id then table.insert(ids, tonumber(id)) end
-                end
-            end
+            ids = ReadRecipeList({
+                num = GetNumCrafts,
+                info = function(i) local n, _, t, _, e = GetCraftInfo(i) return n, t, e end,
+                link = GetCraftRecipeLink,
+                expand = ExpandCraftSkillLine,
+                collapse = CollapseCraftSkillLine,
+            })
         end
     end
-    return profName, ids
+
+    -- Das Schmelz-Fenster gehoert zum Beruf Bergbau.
+    if profName and profName == GroupFound.GetSpellName(2656) then
+        profName = GroupFound.GetSpellName(2575) or profName
+    end
+    return profName, ids or {}
 end
 
 function GroupFound.CaptureOpenRecipes()
     if not GroupFoundCharDB then return end
+    recipeEventsIgnoredUntil = (GetTime and GetTime() or 0) + 1.5
     local ok, profName, ids = pcall(ReadOpenRecipes)
-    if not ok or not profName or #ids == 0 then return end
+    if not ok then
+        GroupFound.Print("CaptureOpenRecipes error: " .. tostring(profName))
+        return
+    end
+    if not profName or #ids == 0 then return end
     local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
     snap.recipes = snap.recipes or {}
     snap.recipes[profName] = ids
@@ -744,8 +826,7 @@ end
 -- angekommen ist (zur Fehlersuche, da sich Classic-Clients bei Berufen unterscheiden).
 function GroupFound.DebugSync()
     local function out(text) DEFAULT_CHAT_FRAME:AddMessage("|cff66ccffGF debug:|r " .. text) end
-    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata
-    out("GroupFound " .. tostring(getMeta and getMeta("GroupFound", "Version")))
+    out("GroupFound " .. GetAddonVersion())
     out(("API: GetProfessions=%s GetNumSkillLines=%s GetSpellInfo=%s C_Spell=%s TradeSkill=%s Craft=%s"):format(
         tostring(GetProfessions ~= nil), tostring(GetNumSkillLines ~= nil), tostring(GetSpellInfo ~= nil),
         tostring(C_Spell ~= nil and C_Spell.GetSpellInfo ~= nil), tostring(GetNumTradeSkills ~= nil),
@@ -767,6 +848,19 @@ function GroupFound.DebugSync()
         out("CollectSkillLineProfessions error: " .. tostring(detected))
     end
 
+    local okTs, tsErr = pcall(function()
+        out(("tradeskill window: line=%s rows=%s | craft window: line=%s rows=%s"):format(
+            tostring(GetTradeSkillLine and (GetTradeSkillLine())), tostring(GetNumTradeSkills and GetNumTradeSkills()),
+            tostring(GetCraftDisplaySkillLine and (GetCraftDisplaySkillLine())), tostring(GetNumCrafts and GetNumCrafts())))
+        local tabs = {}
+        for i = 1, (GetNumSpellTabs and GetNumSpellTabs() or 0) do
+            local tabName, _, offset, numSpells = GetSpellTabInfo(i)
+            table.insert(tabs, ("%s(%s)"):format(tostring(tabName), tostring(numSpells)))
+        end
+        out("spell tabs: " .. table.concat(tabs, ", "))
+    end)
+    if not okTs then out("window/tab debug error: " .. tostring(tsErr)) end
+
     if not GroupFoundCharDB then return end
     local selfSnap = GroupFoundCharDB.snapshots[NormalizeKey(GetSelfFullName())]
     out(("own snapshot: professions=%d recipes=%s gold=%s"):format(
@@ -777,8 +871,9 @@ function GroupFound.DebugSync()
     for _, entry in ipairs(GroupFound.GetSortedList()) do
         local snap = GroupFoundCharDB.snapshots[entry.key]
         local age = snap and snap.profUpdatedAt and (time() - snap.profUpdatedAt) or nil
-        out(("member %s: professions=%d (age %s) recipes=%s gold=%s bags=%s"):format(
+        out(("member %s (v%s): professions=%d (age %s) recipes=%s gold=%s bags=%s"):format(
             entry.display,
+            tostring(memberVersions[entry.key] or "unknown"),
             snap and snap.professions and #snap.professions or 0,
             age and (age .. "s") or "never",
             snap and snap.recipes and RecipesSignature(snap.recipes) or "-",
@@ -797,10 +892,10 @@ end
 
 local captureThrottle = {}
 
-local function ThrottledCapture(kind, fn)
+local function ThrottledCapture(kind, fn, delay)
     if captureThrottle[kind] then return end
     captureThrottle[kind] = true
-    C_Timer.After(3, function()
+    C_Timer.After(delay or 3, function()
         captureThrottle[kind] = nil
         fn()
     end)
@@ -1073,6 +1168,10 @@ function GroupFound.GossipPush(explicitTargets)
     end
     GroupFound.gossipOffset = last >= #historyList and 0 or last
 
+    for _, target in ipairs(targets) do
+        DropQueued(target, "HI")
+        QueueComm("HI" .. SEP .. GetAddonVersion(), target, 1, "HI")
+    end
     GroupFound.PushSnapshots(targets)
 end
 
@@ -1166,6 +1265,14 @@ local function OnAddonMessage(prefix, message, channel, sender)
             local id, finder, itemLink, quality, count, ts = strsplit(SEP, rest, 6)
             GroupFound.MergeItem(id, finder, itemLink, tonumber(quality), tonumber(count), tonumber(ts))
         end
+    elseif typ == "HI" then
+        local key = FindWhitelistKey(sender)
+        local version = rest:match("^%d+%.%d+[%d%.]*$")
+        if key and version and #version <= 20 then
+            TouchLastSeen(sender)
+            memberVersions[key] = version
+            NotifyIfNewer(version)
+        end
     elseif typ == "SNAP" then
         if IsSenderWhitelisted(sender) then
             TouchLastSeen(sender)
@@ -1210,6 +1317,10 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
             GroupFound.CaptureGold()
             GroupFound.GossipPush()
         end)
+        -- Faehigkeiten-Daten sind kurz nach dem Login teils noch leer; erneut lesen
+        -- (sendet nur, wenn sich etwas geaendert hat).
+        C_Timer.After(15, GroupFound.CaptureProfessions)
+        C_Timer.After(60, GroupFound.CaptureProfessions)
         C_Timer.NewTicker(GOSSIP_INTERVAL, function() GroupFound.GossipPush() end)
     elseif event == "PLAYER_MONEY" then
         ThrottledCapture("gold", GroupFound.CaptureGold)
@@ -1230,6 +1341,7 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
         ThrottledCapture("professions", GroupFound.CaptureProfessions)
     elseif event == "TRADE_SKILL_SHOW" or event == "TRADE_SKILL_UPDATE"
             or event == "CRAFT_SHOW" or event == "CRAFT_UPDATE" then
-        ThrottledCapture("recipes", GroupFound.CaptureOpenRecipes)
+        if (GetTime and GetTime() or 0) < recipeEventsIgnoredUntil then return end
+        ThrottledCapture("recipes", GroupFound.CaptureOpenRecipes, 0.5)
     end
 end)

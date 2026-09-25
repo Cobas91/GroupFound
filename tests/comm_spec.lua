@@ -248,6 +248,66 @@ assert(#selfSnap.recipes.Blacksmithing == 2 and selfSnap.recipes.Blacksmithing[1
 GroupFound.CaptureProfessions()
 assert(#GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Blacksmithing == 2, "recipes survive recapture")
 
+receive("HI\1" .. "2.0.5", "Bob")
+assert(GroupFound.GetMemberVersion("bob-myrealm") == "2.0.5")
+sent = {}
+GroupFound.GossipPush({ "Bob" })
+flush()
+local sawHi = false
+for _, entry in ipairs(sent) do
+    if entry.message:match("^HI\1") then sawHi = true end
+end
+assert(sawHi, "gossip must announce the addon version")
+
+-- Recipes under collapsed categories are read, and the categories are restored.
+local tsTree = {
+    { name = "Leather Armor", expanded = false, recipes = { 3001, 3002 } },
+    { name = "Elemental", expanded = true, recipes = { 3003 } },
+}
+local function tsRows()
+    local rows = {}
+    for hi, h in ipairs(tsTree) do
+        table.insert(rows, { h = hi })
+        if h.expanded then
+            for ri = 1, #h.recipes do table.insert(rows, { h = hi, r = ri }) end
+        end
+    end
+    return rows
+end
+function GetTradeSkillLine() return "Leatherworking", 107, 150 end
+function GetNumTradeSkills() return #tsRows() end
+function GetTradeSkillInfo(i)
+    local row = tsRows()[i]
+    if not row.r then return tsTree[row.h].name, "header", 0, tsTree[row.h].expanded and 1 or nil end
+    return "recipe", "optimal", 1, nil
+end
+function GetTradeSkillRecipeLink(i)
+    local row = tsRows()[i]
+    return "|cffffd000|Henchant:" .. tsTree[row.h].recipes[row.r] .. "|h[R]|h|r"
+end
+function ExpandTradeSkillSubClass(i) tsTree[tsRows()[i].h].expanded = true end
+function CollapseTradeSkillSubClass(i) tsTree[tsRows()[i].h].expanded = false end
+GroupFound.CaptureOpenRecipes()
+local leather = GroupFound.GetMemberSnapshot("alice-myrealm").recipes.Leatherworking
+assert(leather and #leather == 3, "recipes in collapsed categories must be included")
+assert(tsTree[1].expanded == false and tsTree[2].expanded == true, "category state must be restored")
+
+-- A newer version announced by a member is reported once in chat.
+assert(GroupFound.IsNewerVersion("2.0.10", "2.0.9") and GroupFound.IsNewerVersion("2.1", "2.0.9"))
+assert(not GroupFound.IsNewerVersion("2.0.5", "2.0.5") and not GroupFound.IsNewerVersion("2.0.4", "2.0.5"))
+function GetAddOnMetadata() return "2.0.5" end
+local chatLines = {}
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) table.insert(chatLines, text) end }
+receive("HI\1" .. "2.0.5", "Bob")
+receive("HI\1" .. "2.0.6", "Bob")
+receive("HI\1" .. "2.0.6", "Bob")
+receive("HI\1" .. "evil |cffff0000text", "Bob")
+local versionNotices = 0
+for _, line in ipairs(chatLines) do
+    if line:find("2.0.6", 1, true) then versionNotices = versionNotices + 1 end
+end
+assert(versionNotices == 1, "expected exactly one update notice, got " .. versionNotices)
+
 GroupFound.DebugSync()
 
 print("comm_spec: passed")

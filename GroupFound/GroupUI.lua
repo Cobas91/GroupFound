@@ -532,7 +532,7 @@ local function RenderMemberDetail(key)
                 local names = {}
                 for _, spellID in ipairs(recipeIDs or {}) do
                     local spellName = GroupFound.GetSpellName(spellID)
-                    if spellName then table.insert(names, spellName) end
+                    table.insert(names, spellName or ("#" .. spellID))
                 end
 
                 nextTextIndex = nextTextIndex + 1

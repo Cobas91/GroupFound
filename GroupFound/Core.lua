@@ -138,12 +138,69 @@ end
 -- Handel (Trade-Fenster)
 ------------------------------------------------------------
 
--- Hinweis: Eine automatische /say-Ankündigung an den blockierten Spieler wurde
--- bewusst nicht umgesetzt. Blizzard blockiert SendChatMessage-Aufrufe, die auf
--- CancelTrade() folgen, als "protected function" (ADDON_ACTION_BLOCKED) -
--- vermutlich ein Schutz gegen Scam-/Spam-Bots mit genau diesem Muster (Handel
--- abbrechen -> automatisch chatten). Das lässt sich nicht zuverlässig umgehen,
--- ohne eine echte Nutzeraktion (Klick/Tastendruck) vorauszusetzen.
+-- Ankuendigung im /say ("ich nutze GroupFound ..."). Seit Patch 8.2.5 (auch Classic Era)
+-- verlangt SendChatMessage fuer SAY/YELL in der offenen Welt einen Hardware-Event
+-- (Tastendruck/Mausklick); in Instanzen ist es frei. TRADE_SHOW kommt aber meist vom
+-- Server (der andere fragt den Handel an) und hat keinen Hardware-Event - ein direkter
+-- Aufruf wird dann blockiert. Deshalb: in Instanzen sofort senden, sonst die Nachricht
+-- vormerken und beim naechsten Tastendruck bzw. Klick in die Spielwelt absetzen.
+local SAY_COOLDOWN = 10
+local SAY_PENDING_TTL = 60
+
+local lastSayAt = {}
+local pendingSay
+local sayInputFrame
+
+local function SayNow(text)
+    SendChatMessage(text, "SAY")
+end
+
+local function DisarmSayInput()
+    if sayInputFrame then
+        sayInputFrame:EnableKeyboard(false)
+    end
+end
+
+-- Wird aus Eingabe-Handlern (Hardware-Event) aufgerufen.
+local function FlushPendingSay()
+    if not pendingSay then return end
+    local pending = pendingSay
+    pendingSay = nil
+    DisarmSayInput()
+    if GetTime() - pending.at > SAY_PENDING_TTL then return end
+    SayNow(pending.text)
+end
+GroupFound.FlushPendingSay = FlushPendingSay
+
+local function ArmSayInput()
+    if not sayInputFrame then
+        sayInputFrame = CreateFrame("Frame")
+        sayInputFrame:SetScript("OnKeyDown", FlushPendingSay)
+        if sayInputFrame.SetPropagateKeyboardInput then
+            sayInputFrame:SetPropagateKeyboardInput(true)
+        end
+    end
+    sayInputFrame:EnableKeyboard(true)
+end
+
+if WorldFrame and WorldFrame.HookScript then
+    WorldFrame:HookScript("OnMouseDown", FlushPendingSay)
+end
+
+local function AnnounceTradeBlocked(name)
+    local now = GetTime()
+    local key = (name or ""):lower()
+    if lastSayAt[key] and now - lastSayAt[key] < SAY_COOLDOWN then return end
+    lastSayAt[key] = now
+
+    local text = L.SAY_TRADE_BLOCKED:format(name or ""):gsub("%s+,", ",")
+    if IsInInstance and IsInInstance() then
+        SayNow(text)
+    else
+        pendingSay = { text = text, at = now }
+        ArmSayInput()
+    end
+end
 
 local function EvaluateTrade(name, realm)
     if GroupFound.IsWhitelisted(name, realm) then
@@ -151,6 +208,7 @@ local function EvaluateTrade(name, realm)
     end
 
     GroupFound.Print(L.MSG_TRADE_BLOCKED:format(name or "?"))
+    AnnounceTradeBlocked(name)
     CancelTrade()
 end
 

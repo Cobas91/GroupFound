@@ -6,7 +6,7 @@ Version 2.0 also shares notable finds and character data between whitelisted pla
 
 ## Features
 
-- Trade with a player outside your whitelist is cancelled when the trade window opens.
+- Trade with a player outside your whitelist is cancelled when the trade window opens, and GroupFound says in /say that you use the addon. Outdoors WoW only lets addons use /say after a key press or click, so the message is sent on your next key press or world click (immediately inside instances).
 - Mail to unlisted recipients and taking attachments or money from unlisted senders is blocked. Mail with an unknown sender is blocked too.
 - The auction house is closed when opened.
 - The members tab shows your whitelist, approximate recent activity, and received snapshots of bags, bank, gold, professions, and recipes. Bank data is available after the player has opened their bank.
