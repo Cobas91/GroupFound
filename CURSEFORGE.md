@@ -7,13 +7,13 @@ Copy the pieces below into the matching fields when creating/editing the project
 ## Summary (short tagline / project card, ~255 chars max)
 
 ```
-Hardcore trade whitelist: block trade, mail, and the auction house for anyone not on your personal player list. Configurable in-game via /gf.
+Hardcore trade whitelist with mutual invites, shared finds and character snapshots. Blocks trade, mail, and auction access for players outside your list. Open with /gf.
 ```
 
 German alternative, if you'd rather lead with German (the addon's default audience for now):
 
 ```
-Hardcore-Handelsschutz: Handel, Post und Auktionshaus werden für alle Spieler blockiert, die nicht auf deiner persönlichen Liste stehen. Einstellbar per /gf.
+Hardcore-Handelsschutz mit Einladungen und geteilter Fundhistorie. Handel, Post und Auktionshaus sind für Spieler außerhalb deiner Liste gesperrt. Öffnen mit /gf.
 ```
 
 ---
@@ -41,11 +41,14 @@ have to remember.
 - **Auction house disabled** — the auction house UI is closed the moment it opens.
 - **Always on** — there are no settings to turn protection off. If GroupFound is
   loaded, the rules apply. No accidental (or "just this once") disabling.
-- **Simple whitelist management** — open the panel with `/gf`, type a name and
-  click Add, or add whoever you currently have targeted with one click.
-- **Fully localized** — the UI and all chat messages automatically match your
-  game client's language: English, German, French, Spanish, Portuguese (BR),
-  Italian, Russian, Korean, and Chinese (Simplified & Traditional).
+- **Invites and direct adds** — enter a name in `/gf` to invite another GroupFound
+  player. Acceptance adds each player to the other's whitelist. An empty field
+  adds your current player target directly; `/gf add <name>` adds a name directly.
+- **Shared data** — members exchange notable finds, bags, bank, gold, professions,
+  and recipes through addon whispers. Data is stored locally per character and
+  synchronized on a best-effort basis while players are online.
+- **Localized interface** — English and German cover current features. Other
+  supported client locales fall back to English for newer text.
 
 ## How it works
 
@@ -57,15 +60,18 @@ Everyone else is blocked with a clear chat message explaining why.
 
 | Command | Effect |
 |---|---|
-| `/gf` | Open/close the whitelist window |
-| `/gf add <name>` | Add a player to the list |
+| `/gf` | Open/close the window |
+| `/gf group` | Open the members tab |
+| `/gf invite <name>` | Invite a player running GroupFound |
+| `/gf add <name>` | Add a player directly |
 | `/gf add` | No name given — adds your **current target** instead |
 | `/gf remove <name>` | Remove a player from the list |
 | `/gf list` | Print the current whitelist to chat |
 
-The in-game panel (`/gf`) covers the same actions with a name field, an Add
-button (leave the field empty and click it to add your current target), and a
-scrollable list with a remove button per entry.
+The in-game panel has members and history tabs. Entering a name and clicking
+Invite sends an invitation; leaving the field empty adds your current target.
+An invitation lasts 60 seconds. The receiving player must have GroupFound loaded
+and accept the popup.
 
 ## Requirements
 
@@ -77,6 +83,8 @@ scrollable list with a remove button per entry.
 
 - Your whitelist is account-wide (`SavedVariables`), so it carries over between
   characters on the same account.
+- History and snapshots are stored per character. Removing a member stops future
+  sharing with that member but does not erase previously received data.
 - Protection cannot be disabled from the addon UI or slash commands by design —
   that's the whole point.
 ```

@@ -16,9 +16,12 @@ local HISTORY_CAP = 300
 local GOSSIP_INTERVAL = 180
 local GOSSIP_ITEM_BATCH = 20
 local PENDING_INVITE_TTL = 60
-local SNAP_CHUNK_ENTRIES = 20
+local SNAP_PAYLOAD_BYTES = 210
 local SNAP_BUFFER_TTL = 120
 local ONLINE_WINDOW = 300
+local MAX_COMM_BYTES = 255
+local MAX_SNAP_CHUNKS = 100
+local MAX_ITEM_LINK_BYTES = 1024
 
 ------------------------------------------------------------
 -- Hilfsfunktionen
@@ -43,7 +46,20 @@ function GroupFound.GetSelfFullName()
 end
 
 local function NormalizeKey(name)
-    return trim(name or ""):lower()
+    return GroupFound.NormalizeNameKey(name)
+end
+
+local function LocalRealmKey()
+    return (GetRealmName() or ""):gsub("%s+", ""):lower()
+end
+
+local function IsSameCharacter(a, b)
+    local aName, aRealm = strsplit("-", NormalizeKey(a), 2)
+    local bName, bRealm = strsplit("-", NormalizeKey(b), 2)
+    if aName ~= bName then return false end
+    aRealm = aRealm and aRealm:gsub("%s+", "") or LocalRealmKey()
+    bRealm = bRealm and bRealm:gsub("%s+", "") or LocalRealmKey()
+    return aRealm == bRealm
 end
 
 -- Findet den Whitelist-Key zu einem Absender aus CHAT_MSG_ADDON. Der Absender kommt je
@@ -53,12 +69,11 @@ end
 local function FindWhitelistKey(sender)
     if not GroupFoundDB or not sender or sender == "" then return nil end
     local name, realm = strsplit("-", sender, 2)
-    local lname = (name or sender):lower()
+    local lname = NormalizeKey(name or sender)
     if GroupFoundDB.whitelist[lname] then return lname end
-    if realm and realm ~= "" then
-        local combined = (name .. "-" .. realm):lower()
-        if GroupFoundDB.whitelist[combined] then return combined end
-    end
+    if not realm or realm == "" then realm = GetRealmName() end
+    local combined = NormalizeKey(name .. "-" .. realm)
+    if GroupFoundDB.whitelist[combined] then return combined end
     return nil
 end
 
@@ -73,12 +88,8 @@ end
 -- und der Erfinder wird nie zur eigenen Liste hinzugefügt.
 local function FindPendingKey(sender)
     if not GroupFoundCharDB or not sender or sender == "" then return nil end
-    local name, realm = strsplit("-", sender, 2)
-    local lname = (name or sender):lower()
-    if GroupFoundCharDB.pendingInvites[lname] then return lname end
-    if realm and realm ~= "" then
-        local combined = (name .. "-" .. realm):lower()
-        if GroupFoundCharDB.pendingInvites[combined] then return combined end
+    for key in pairs(GroupFoundCharDB.pendingInvites) do
+        if IsSameCharacter(key, sender) then return key end
     end
     return nil
 end
@@ -107,12 +118,14 @@ function GroupFound.GetMemberLastSeen(key)
 end
 
 local function SendComm(message, target)
-    if not target or target == "" then return end
+    if not target or target == "" or #message > MAX_COMM_BYTES then return false end
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(COMM_PREFIX, message, "WHISPER", target)
+        local result = C_ChatInfo.SendAddonMessage(COMM_PREFIX, message, "WHISPER", target)
+        return result == nil or result == 0 or result == true
     elseif SendAddonMessage then
-        SendAddonMessage(COMM_PREFIX, message, "WHISPER", target)
+        return SendAddonMessage(COMM_PREFIX, message, "WHISPER", target) ~= false
     end
+    return false
 end
 
 local function RegisterComm()
@@ -129,6 +142,16 @@ local function GetWhitelistTargets()
     return targets
 end
 
+local function IsValidItem(id, finder, itemLink, quality, count, ts)
+    return type(id) == "string" and #id <= 100 and id:match("^[^%c]+#%d+$")
+        and type(finder) == "string" and finder ~= "" and #finder <= 100 and not finder:find("%c")
+        and type(itemLink) == "string" and itemLink ~= "" and #itemLink <= MAX_ITEM_LINK_BYTES
+        and not itemLink:find("%c")
+        and type(quality) == "number" and quality >= 0 and quality <= 7
+        and type(count) == "number" and count >= 1 and count <= 100000
+        and type(ts) == "number" and ts >= 1 and ts <= time() + 300
+end
+
 ------------------------------------------------------------
 -- SavedVariablesPerCharacter / DB
 ------------------------------------------------------------
@@ -139,6 +162,24 @@ function GroupFound.InitCharDB()
     GroupFoundCharDB.nextLocalId = GroupFoundCharDB.nextLocalId or 1
     GroupFoundCharDB.snapshots = GroupFoundCharDB.snapshots or {}
     GroupFoundCharDB.pendingInvites = GroupFoundCharDB.pendingInvites or {}
+    local normalizedSnapshots = {}
+    for key, snap in pairs(GroupFoundCharDB.snapshots) do
+        normalizedSnapshots[NormalizeKey(key)] = snap
+    end
+    GroupFoundCharDB.snapshots = normalizedSnapshots
+    local normalizedInvites = {}
+    for key, expiresAt in pairs(GroupFoundCharDB.pendingInvites) do
+        if type(expiresAt) == "number" and expiresAt >= time() then
+            normalizedInvites[NormalizeKey(key)] = expiresAt
+        end
+    end
+    GroupFoundCharDB.pendingInvites = normalizedInvites
+    for id, entry in pairs(GroupFoundCharDB.history) do
+        if type(entry) ~= "table" or not IsValidItem(id, entry.finder, entry.itemLink,
+                entry.quality, entry.count, entry.ts) then
+            GroupFoundCharDB.history[id] = nil
+        end
+    end
 end
 
 ------------------------------------------------------------
@@ -160,7 +201,8 @@ end
 
 function GroupFound.MergeItem(id, finder, itemLink, quality, count, ts)
     if not GroupFoundCharDB then return end
-    if not id or id == "" or GroupFoundCharDB.history[id] then return end
+    if not IsValidItem(id, finder, itemLink, quality, count, ts) then return end
+    if GroupFoundCharDB.history[id] then return end
     GroupFoundCharDB.history[id] = {
         finder = finder,
         itemLink = itemLink,
@@ -186,6 +228,7 @@ end
 
 function GroupFound.RecordOwnFind(itemLink, quality, count)
     if not GroupFoundCharDB then return end
+    if type(itemLink) ~= "string" or #itemLink > MAX_ITEM_LINK_BYTES then return end
 
     local selfName = GetSelfFullName()
     local id = NormalizeKey(selfName) .. "#" .. GroupFoundCharDB.nextLocalId
@@ -212,9 +255,9 @@ end
 function GroupFound.SendInvite(rawName)
     local raw = trim(rawName)
     if raw == "" then return end
-    local key = raw:lower()
+    local key = NormalizeKey(raw)
 
-    if key == NormalizeKey(GetSelfFullName()) then
+    if IsSameCharacter(raw, GetSelfFullName()) then
         GroupFound.Print(L.MSG_CANNOT_INVITE_SELF)
         return
     end
@@ -223,9 +266,12 @@ function GroupFound.SendInvite(rawName)
         return
     end
 
-    GroupFoundCharDB.pendingInvites[key] = time() + PENDING_INVITE_TTL
-    SendComm("INV", raw)
-    GroupFound.Print(L.MSG_INVITE_SENT:format(raw))
+    if SendComm("INV", raw) then
+        GroupFoundCharDB.pendingInvites[key] = time() + PENDING_INVITE_TTL
+        GroupFound.Print(L.MSG_INVITE_SENT:format(raw))
+    else
+        GroupFound.Print(L.MSG_INVITE_FAILED:format(raw))
+    end
 end
 
 StaticPopupDialogs["GROUPFOUND_INVITE"] = {
@@ -233,13 +279,17 @@ StaticPopupDialogs["GROUPFOUND_INVITE"] = {
     button1 = L.POPUP_ACCEPT,
     button2 = L.POPUP_DECLINE,
     OnAccept = function(self, data)
+        if not data or not data.sender then return end
+        if not SendComm("ACC", data.sender) then
+            GroupFound.Print(L.MSG_INVITE_FAILED:format(data.sender))
+            return
+        end
         GroupFound.AddName(data.sender)
-        SendComm("ACC", data.sender)
         GroupFound.GossipPush()
         if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
     end,
     OnCancel = function(self, data)
-        SendComm("DEC", data.sender)
+        if data and data.sender then SendComm("DEC", data.sender) end
     end,
     timeout = 30,
     whileDead = true,
@@ -248,6 +298,7 @@ StaticPopupDialogs["GROUPFOUND_INVITE"] = {
 }
 
 function GroupFound.ShowInvitePopup(sender)
+    if not sender or sender == "" or IsSameCharacter(sender, GetSelfFullName()) then return end
     local text = L.POPUP_INVITE_TEXT:format(sender)
     StaticPopup_Show("GROUPFOUND_INVITE", text, nil, { sender = sender })
 end
@@ -457,7 +508,9 @@ end
 local function BuildRecipesPayload(recipes)
     local parts = {}
     for profName, spellIDs in pairs(recipes or {}) do
-        table.insert(parts, profName .. ":" .. table.concat(spellIDs, ","))
+        for _, spellID in ipairs(spellIDs) do
+            table.insert(parts, profName .. ":" .. spellID)
+        end
     end
     return table.concat(parts, ";")
 end
@@ -475,7 +528,8 @@ local function ParseRecipesPayload(payload)
             for id in idsCSV:gmatch("%d+") do
                 table.insert(ids, tonumber(id))
             end
-            map[name] = ids
+            map[name] = map[name] or {}
+            for _, id in ipairs(ids) do table.insert(map[name], id) end
         end
     end
     return map
@@ -491,16 +545,21 @@ function GroupFound.SendSnapshotChunks(kind, payload, updatedAt, targets)
 
     local chunks = {}
     local current = {}
+    local currentBytes = 0
     for _, entry in ipairs(entries) do
-        table.insert(current, entry)
-        if #current >= SNAP_CHUNK_ENTRIES then
+        if #entry > SNAP_PAYLOAD_BYTES then return end
+        if currentBytes > 0 and currentBytes + 1 + #entry > SNAP_PAYLOAD_BYTES then
             table.insert(chunks, table.concat(current, ";"))
             current = {}
+            currentBytes = 0
         end
+        table.insert(current, entry)
+        currentBytes = currentBytes + #entry + (currentBytes > 0 and 1 or 0)
     end
     if #current > 0 or #chunks == 0 then
         table.insert(chunks, table.concat(current, ";"))
     end
+    if #chunks > MAX_SNAP_CHUNKS then return end
 
     for idx, chunkPayload in ipairs(chunks) do
         local msg = table.concat({ "SNAP", kind, tostring(updatedAt), tostring(idx), tostring(#chunks), chunkPayload }, SEP)
@@ -567,6 +626,9 @@ end
 
 local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunks, payload)
     if not kind or not updatedAt or not chunkIdx or not totalChunks then return end
+    if kind ~= "BAGS" and kind ~= "BANK" and kind ~= "PROF" and kind ~= "RECIPES" and kind ~= "GOLD" then return end
+    if totalChunks < 1 or totalChunks > MAX_SNAP_CHUNKS or chunkIdx < 1 or chunkIdx > totalChunks then return end
+    if updatedAt < 1 or updatedAt > time() + 300 or #payload > SNAP_PAYLOAD_BYTES then return end
 
     CleanupStaleSnapshotBuffers()
 
@@ -633,7 +695,11 @@ function GroupFound.GossipPush(explicitTargets)
     if #targets == 0 then return end
 
     local historyList = GroupFound.GetSortedHistory()
-    for i = 1, math.min(GOSSIP_ITEM_BATCH, #historyList) do
+    GroupFound.gossipOffset = GroupFound.gossipOffset or 0
+    if GroupFound.gossipOffset >= #historyList then GroupFound.gossipOffset = 0 end
+    local first = GroupFound.gossipOffset + 1
+    local last = math.min(first + GOSSIP_ITEM_BATCH - 1, #historyList)
+    for i = first, last do
         local e = historyList[i]
         local itemMsg = table.concat(
             { "ITEM", e.id, e.finder, e.itemLink, tostring(e.quality), tostring(e.count), tostring(e.ts) },
@@ -643,6 +709,7 @@ function GroupFound.GossipPush(explicitTargets)
             SendComm(itemMsg, target)
         end
     end
+    GroupFound.gossipOffset = last >= #historyList and 0 or last
 
     GroupFound.PushSnapshots(targets)
 end
@@ -711,8 +778,16 @@ local function OnAddonMessage(prefix, message, channel, sender)
     elseif typ == "ACC" then
         local key = FindPendingKey(sender)
         if key then
+            if type(GroupFoundCharDB.pendingInvites[key]) ~= "number" or GroupFoundCharDB.pendingInvites[key] < time() then
+                GroupFoundCharDB.pendingInvites[key] = nil
+                return
+            end
             GroupFoundCharDB.pendingInvites[key] = nil
-            GroupFound.AddName(sender)
+            local confirmedName = sender
+            if not sender:find("-", 1, true) and key:find("-", 1, true) then
+                confirmedName = sender .. "-" .. GetRealmName()
+            end
+            GroupFound.AddName(confirmedName)
             GroupFound.Print(L.MSG_INVITE_ACCEPTED:format(sender))
             GroupFound.GossipPush()
             if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
