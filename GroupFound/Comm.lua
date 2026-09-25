@@ -117,15 +117,84 @@ function GroupFound.GetMemberLastSeen(key)
     return lastSeenAt[key]
 end
 
-local function SendComm(message, target)
+-- Zweiter Rueckgabewert: true, wenn der Client die Nachricht wegen Throttling abgelehnt hat
+-- (Enum.SendAddonMessageResult.AddonMessageThrottle/ChannelThrottle = 3/4) - dann lohnt
+-- ein spaeterer Versuch, bei allen anderen Fehlern nicht.
+local function TrySendComm(message, target)
     if not target or target == "" or #message > MAX_COMM_BYTES then return false end
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
         local result = C_ChatInfo.SendAddonMessage(COMM_PREFIX, message, "WHISPER", target)
-        return result == nil or result == 0 or result == true
+        if result == nil or result == 0 or result == true then return true end
+        return false, (result == 3 or result == 4)
     elseif SendAddonMessage then
         return SendAddonMessage(COMM_PREFIX, message, "WHISPER", target) ~= false
     end
     return false
+end
+
+local function SendComm(message, target)
+    return (TrySendComm(message, target))
+end
+
+-- Gedrosselte Sende-Warteschlange fuer Massen-Nachrichten (Snapshots, Gossip, Funde).
+-- Blizzard verwirft Addon-Nachrichten nach einem kleinen Burst still (Throttle-Ergebnis),
+-- ein Schwall aus Bag-/Rezept-Chunks liess so Gold und Berufe nie ankommen. Niedrigere
+-- prio wird zuerst gesendet; bei Throttling wird spaeter erneut versucht.
+local SEND_INTERVAL = 0.25
+local RETRY_INTERVAL = 1.5
+local MAX_SEND_ATTEMPTS = 30
+local OUTBOX_CAP = 600
+
+local outbox = {}
+local pumpScheduled = false
+
+local SchedulePump
+
+local function PumpOutbox()
+    pumpScheduled = false
+    local bestIdx
+    for i, item in ipairs(outbox) do
+        if not bestIdx or item.prio < outbox[bestIdx].prio then bestIdx = i end
+    end
+    if not bestIdx then return end
+
+    local item = outbox[bestIdx]
+    local ok, throttled = TrySendComm(item.message, item.target)
+    local delay = SEND_INTERVAL
+    if ok then
+        table.remove(outbox, bestIdx)
+    else
+        item.attempts = item.attempts + 1
+        if throttled and item.attempts < MAX_SEND_ATTEMPTS then
+            delay = RETRY_INTERVAL
+        else
+            table.remove(outbox, bestIdx)
+        end
+    end
+    if #outbox > 0 then SchedulePump(delay) end
+end
+
+SchedulePump = function(delay)
+    if pumpScheduled then return end
+    pumpScheduled = true
+    C_Timer.After(delay, PumpOutbox)
+end
+
+local function QueueComm(message, target, prio, kind)
+    if not target or target == "" or #message > MAX_COMM_BYTES then return end
+    table.insert(outbox, { message = message, target = target, prio = prio, kind = kind, attempts = 0 })
+    if #outbox > OUTBOX_CAP then table.remove(outbox, 1) end
+    SchedulePump(0)
+end
+
+-- Ersetzt einen noch nicht (vollstaendig) gesendeten Snapshot derselben Art durch den
+-- neueren Stand, damit die Warteschlange bei haeufigen Aenderungen nicht anwaechst.
+local function DropQueued(target, kind)
+    for i = #outbox, 1, -1 do
+        if outbox[i].target == target and outbox[i].kind == kind then
+            table.remove(outbox, i)
+        end
+    end
 end
 
 local function RegisterComm()
@@ -244,7 +313,7 @@ function GroupFound.RecordOwnFind(itemLink, quality, count)
         SEP
     )
     for _, target in ipairs(GetWhitelistTargets()) do
-        SendComm(message, target)
+        QueueComm(message, target, 1, "ITEM")
     end
 end
 
@@ -333,6 +402,28 @@ local function GetBagSlotItem(bag, slot)
     return itemID, count or 1, itemLink
 end
 
+-- Reduziert einen Item-Link auf "item:ID:enchant:gem1..4:suffix:unique" (ohne Farbcode/
+-- Name/Spielerlevel), damit ein Bag-Snapshot in wenige Chunks passt. Liefert nil, wenn
+-- der Link keine Zusatzdaten (Zufallsverzauberung, Verzauberung, Edelsteine) enthaelt -
+-- dann reicht die itemID.
+local function CompactItemString(link)
+    local str = type(link) == "string" and link:match("item:[%-%d:]+")
+    if not str then return nil end
+    local fields = {}
+    for field in (str .. ":"):gmatch("([^:]*):") do
+        table.insert(fields, field)
+    end
+    local parts = { "item", fields[2] or "" }
+    local hasExtra = false
+    for i = 3, 9 do
+        local f = fields[i] or ""
+        if f ~= "" and f ~= "0" then hasExtra = true end
+        table.insert(parts, f)
+    end
+    if not hasExtra then return nil end
+    return table.concat(parts, ":")
+end
+
 local function EnsureSnapshot(key)
     GroupFoundCharDB.snapshots[key] = GroupFoundCharDB.snapshots[key] or {}
     return GroupFoundCharDB.snapshots[key]
@@ -348,7 +439,8 @@ function GroupFound.CaptureBags()
             local itemID, count, link = GetBagSlotItem(bag, slot)
             if itemID then
                 counts[itemID] = (counts[itemID] or 0) + count
-                if link then links[itemID] = link end
+                local compact = CompactItemString(link)
+                if compact then links[itemID] = compact end
             end
         end
     end
@@ -374,7 +466,8 @@ function GroupFound.CaptureBank()
             local itemID, count, link = GetBagSlotItem(bag, slot)
             if itemID then
                 counts[itemID] = (counts[itemID] or 0) + count
-                if link then links[itemID] = link end
+                local compact = CompactItemString(link)
+                if compact then links[itemID] = compact end
             end
         end
     end
@@ -396,13 +489,28 @@ local function CaptureProfessionsImpl()
 
     -- pairs() statt ipairs(): GetProfessions() kann Luecken in der Mitte liefern
     -- (z.B. keine Erstberufe, aber Kochen) - ipairs wuerde beim ersten nil abbrechen.
-    local profIndices = { GetProfessions() }
     local profNames = {}
-    for _, index in pairs(profIndices) do
-        if index then
-            local name, _, skillLevel, maxSkillLevel = GetProfessionInfo(index)
-            if name then
-                table.insert(professions, { name = name, level = skillLevel or 0, maxLevel = maxSkillLevel or 0 })
+    if GetProfessions and GetProfessionInfo then
+        local profIndices = { GetProfessions() }
+        for _, index in pairs(profIndices) do
+            if index then
+                local name, _, skillLevel, maxSkillLevel = GetProfessionInfo(index)
+                if name then
+                    table.insert(professions, { name = name, level = skillLevel or 0, maxLevel = maxSkillLevel or 0 })
+                    profNames[name] = true
+                end
+            end
+        end
+    elseif GetNumSkillLines and GetSkillLineInfo then
+        -- Clients ohne GetProfessions: Berufe stehen im Faehigkeiten-Fenster unter den
+        -- Kopfzeilen "Berufe"/"Nebenberufe".
+        local inProfessionHeader = false
+        for i = 1, GetNumSkillLines() do
+            local name, isHeader, _, rank, _, _, maxRank = GetSkillLineInfo(i)
+            if isHeader then
+                inProfessionHeader = (name == TRADE_SKILLS or name == SECONDARY_SKILLS)
+            elseif inProfessionHeader and name then
+                table.insert(professions, { name = name, level = rank or 0, maxLevel = maxRank or 0 })
                 profNames[name] = true
             end
         end
@@ -500,7 +608,8 @@ local function ParseCountsPayload(payload)
         end
         if itemID then
             counts[tonumber(itemID)] = tonumber(count)
-            if link then links[tonumber(itemID)] = link end
+            local itemString = link and link:match("item:[%-%d:]+")
+            if itemString and #itemString <= 100 then links[tonumber(itemID)] = itemString end
         end
     end
     return counts, links
@@ -555,6 +664,8 @@ local function ParseRecipesPayload(payload)
     return map
 end
 
+local SNAP_SEND_PRIORITY = { GOLD = 1, PROF = 1, BAGS = 2, BANK = 2, RECIPES = 3 }
+
 function GroupFound.SendSnapshotChunks(kind, payload, updatedAt, targets)
     if not targets or #targets == 0 or not updatedAt then return end
 
@@ -581,10 +692,12 @@ function GroupFound.SendSnapshotChunks(kind, payload, updatedAt, targets)
     end
     if #chunks > MAX_SNAP_CHUNKS then return end
 
-    for idx, chunkPayload in ipairs(chunks) do
-        local msg = table.concat({ "SNAP", kind, tostring(updatedAt), tostring(idx), tostring(#chunks), chunkPayload }, SEP)
-        for _, target in ipairs(targets) do
-            SendComm(msg, target)
+    local prio = SNAP_SEND_PRIORITY[kind] or 3
+    for _, target in ipairs(targets) do
+        DropQueued(target, "SNAP" .. kind)
+        for idx, chunkPayload in ipairs(chunks) do
+            local msg = table.concat({ "SNAP", kind, tostring(updatedAt), tostring(idx), tostring(#chunks), chunkPayload }, SEP)
+            QueueComm(msg, target, prio, "SNAP" .. kind)
         end
     end
 end
@@ -726,7 +839,7 @@ function GroupFound.GossipPush(explicitTargets)
             SEP
         )
         for _, target in ipairs(targets) do
-            SendComm(itemMsg, target)
+            QueueComm(itemMsg, target, 4, "ITEM")
         end
     end
     GroupFound.gossipOffset = last >= #historyList and 0 or last

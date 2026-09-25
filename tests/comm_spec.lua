@@ -6,6 +6,8 @@ local sent = {}
 local frames = {}
 local popup
 local sendResult = 0
+local budget = math.huge
+local timers = {}
 
 function time() return now end
 function GetLocale() return "enUS" end
@@ -37,10 +39,23 @@ function StaticPopup_Show(_, _, _, data) popup = data end
 StaticPopupDialogs = {}
 SlashCmdList = {}
 DEFAULT_CHAT_FRAME = { AddMessage = function() end }
-C_Timer = { After = function() end, NewTicker = function() end }
+C_Timer = { After = function(_, fn) table.insert(timers, fn) end, NewTicker = function() end }
+
+-- Runs queued timers (the paced send queue) until idle; each tick refills one send token.
+local function flush()
+    local guard = 0
+    while #timers > 0 do
+        guard = guard + 1
+        assert(guard < 20000, "timer loop did not settle")
+        budget = budget + 1
+        table.remove(timers, 1)()
+    end
+end
 C_ChatInfo = {
     RegisterAddonMessagePrefix = function() return 0 end,
     SendAddonMessage = function(_, message, _, target)
+        if sendResult == 0 and budget < 1 then return 3 end
+        if sendResult == 0 then budget = budget - 1 end
         table.insert(sent, { message = message, target = target })
         return sendResult
     end,
@@ -102,6 +117,7 @@ sent = {}
 local entries = {}
 for i = 1, 60 do table.insert(entries, (1000 + i) .. ":1") end
 GroupFound.SendSnapshotChunks("BAGS", table.concat(entries, ";"), now, { "Bob" })
+flush()
 assert(#sent > 1)
 for _, entry in ipairs(sent) do
     assert(#entry.message <= 255)
@@ -118,6 +134,7 @@ sent = {}
 GroupFound.gossipOffset = 0
 GroupFound.GossipPush({ "Bob" })
 GroupFound.GossipPush({ "Bob" })
+flush()
 local itemIDs = {}
 for _, entry in ipairs(sent) do
     local id = entry.message:match("^ITEM\1([^\1]+)")
@@ -126,5 +143,44 @@ end
 local count = 0
 for _ in pairs(itemIDs) do count = count + 1 end
 assert(count == 30)
+
+-- Under client throttling, small gold/profession snapshots must not starve behind bulk data.
+now = now + 10
+budget = 3
+sent = {}
+local recipeEntries = {}
+for i = 1, 150 do table.insert(recipeEntries, "Blacksmithing:" .. (10000 + i)) end
+GroupFound.SendSnapshotChunks("RECIPES", table.concat(recipeEntries, ";"), now, { "Bob" })
+GroupFound.SendSnapshotChunks("BAGS", table.concat(entries, ";"), now, { "Bob" })
+GroupFound.SendSnapshotChunks("GOLD", "1234567", now, { "Bob" })
+GroupFound.SendSnapshotChunks("PROF", "Blacksmithing:150:300;Mining:75:150", now, { "Bob" })
+flush()
+local firstKinds = {}
+for i = 1, 2 do firstKinds[sent[i].message:match("^SNAP\1(%u+)")] = true end
+assert(firstKinds.GOLD and firstKinds.PROF, "gold/prof must be sent before bulk chunks")
+for _, entry in ipairs(sent) do
+    assert(#entry.message <= 255)
+    receive(entry.message, "Bob")
+end
+local bobSnap = GroupFound.GetMemberSnapshot("bob-myrealm")
+assert(bobSnap.gold == 1234567)
+assert(#bobSnap.professions == 2 and bobSnap.professions[1].name == "Blacksmithing")
+assert(#bobSnap.recipes.Blacksmithing == 150)
+
+-- A newer snapshot replaces a still-queued older one of the same kind.
+sent = {}
+budget = 0
+GroupFound.SendSnapshotChunks("GOLD", "1", now + 1, { "Bob" })
+GroupFound.SendSnapshotChunks("GOLD", "2", now + 2, { "Bob" })
+flush()
+assert(#sent == 1 and sent[1].message:find("\1" .. (now + 2) .. "\1", 1, true))
+
+-- Bag links carry only random-enchant/enchant/gem data and are validated on receipt.
+receive(table.concat({ "SNAP", "BANK", tostring(now + 3), "1", "1",
+    "2589:5;19870:1:item:19870:0:0:0:0:0:1234:5678;3:1:garbage" }, "\1"), "Bob")
+bobSnap = GroupFound.GetMemberSnapshot("bob-myrealm")
+assert(bobSnap.bank[2589] == 5 and bobSnap.bankLinks[2589] == nil)
+assert(bobSnap.bankLinks[19870] == "item:19870:0:0:0:0:0:1234:5678")
+assert(bobSnap.bankLinks[3] == nil)
 
 print("comm_spec: passed")
