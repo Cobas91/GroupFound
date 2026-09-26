@@ -445,6 +445,131 @@ local function PlaceIconGrid(parent, anchorTo, counts, yOffsetAfterAnchor, links
     return rowIdx + (col > 0 and 1 or 0)
 end
 
+------------------------------------------------------------
+-- Ausruestung im Layout des Charakterfensters (ohne Charaktermodell)
+------------------------------------------------------------
+
+-- Anordnung wie im Classic-Era-Charakterfenster: linke Spalte (Kopf bis Handgelenke),
+-- rechte Spalte (Haende bis Schmuck) und die Waffen mittig darunter.
+-- slot = Inventar-Slot-ID, name = Slot-Name fuer GetInventorySlotInfo.
+local PAPERDOLL_SLOT_SIZE = 36
+local PAPERDOLL_SLOT_GAP = 4
+local PAPERDOLL_SIDE_MARGIN = 40
+local PAPERDOLL_ROWS = 8
+local PAPERDOLL_HEIGHT = PAPERDOLL_ROWS * (PAPERDOLL_SLOT_SIZE + PAPERDOLL_SLOT_GAP) + 8 + PAPERDOLL_SLOT_SIZE + 2
+local PAPERDOLL_LAYOUT = {
+    { slot = 1,  name = "HeadSlot",          side = "L", row = 0 },
+    { slot = 2,  name = "NeckSlot",          side = "L", row = 1 },
+    { slot = 3,  name = "ShoulderSlot",      side = "L", row = 2 },
+    { slot = 15, name = "BackSlot",          side = "L", row = 3 },
+    { slot = 5,  name = "ChestSlot",         side = "L", row = 4 },
+    { slot = 4,  name = "ShirtSlot",         side = "L", row = 5 },
+    { slot = 19, name = "TabardSlot",        side = "L", row = 6 },
+    { slot = 9,  name = "WristSlot",         side = "L", row = 7 },
+    { slot = 10, name = "HandsSlot",         side = "R", row = 0 },
+    { slot = 6,  name = "WaistSlot",         side = "R", row = 1 },
+    { slot = 7,  name = "LegsSlot",          side = "R", row = 2 },
+    { slot = 8,  name = "FeetSlot",          side = "R", row = 3 },
+    { slot = 11, name = "Finger0Slot",       side = "R", row = 4 },
+    { slot = 12, name = "Finger1Slot",       side = "R", row = 5 },
+    { slot = 13, name = "Trinket0Slot",      side = "R", row = 6 },
+    { slot = 14, name = "Trinket1Slot",      side = "R", row = 7 },
+    { slot = 16, name = "MainHandSlot",      side = "B", col = 0 },
+    { slot = 17, name = "SecondaryHandSlot", side = "B", col = 1 },
+    { slot = 18, name = "RangedSlot",        side = "B", col = 2 },
+}
+
+local function CreatePaperDollSlot(parent, def)
+    local size = PAPERDOLL_SLOT_SIZE
+    local slot = CreateFrame("Frame", nil, parent)
+    slot:SetSize(size, size)
+    slot:EnableMouse(true)
+
+    local x, y
+    if def.side == "L" then
+        x, y = PAPERDOLL_SIDE_MARGIN, -def.row * (size + PAPERDOLL_SLOT_GAP)
+    elseif def.side == "R" then
+        x, y = MEMBER_ROW_WIDTH - PAPERDOLL_SIDE_MARGIN - size, -def.row * (size + PAPERDOLL_SLOT_GAP)
+    else
+        local total = 3 * size + 2 * PAPERDOLL_SLOT_GAP
+        x = (MEMBER_ROW_WIDTH - total) / 2 + def.col * (size + PAPERDOLL_SLOT_GAP)
+        y = -(PAPERDOLL_ROWS * (size + PAPERDOLL_SLOT_GAP) + 8)
+    end
+    slot:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
+
+    -- Leerer Slot: dieselbe Grafik wie im Charakterfenster (falls der Client sie liefert).
+    slot.bg = slot:CreateTexture(nil, "BACKGROUND")
+    slot.bg:SetAllPoints()
+    slot.bg:SetColorTexture(1, 1, 1, 0.05)
+    slot.empty = slot:CreateTexture(nil, "ARTWORK")
+    slot.empty:SetAllPoints()
+    local okInfo, _, emptyTexture = pcall(GetInventorySlotInfo, def.name)
+    if okInfo and emptyTexture then slot.empty:SetTexture(emptyTexture) end
+
+    slot.icon = slot:CreateTexture(nil, "ARTWORK", nil, 1)
+    slot.icon:SetAllPoints()
+    slot.icon:Hide()
+
+    slot.border = slot:CreateTexture(nil, "OVERLAY")
+    slot.border:SetAllPoints()
+    slot.border:SetTexture("Interface\\Common\\WhiteIconFrame")
+    slot.border:Hide()
+
+    slot.label = _G[string.upper(def.name)] or def.name
+
+    slot:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.itemString then
+            GameTooltip:SetHyperlink(self.itemString)
+        else
+            GameTooltip:SetText(self.label, 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    return slot
+end
+
+local function GetPaperDoll(parent)
+    if membersUI.doll then return membersUI.doll end
+    local doll = CreateFrame("Frame", nil, parent)
+    doll:SetSize(MEMBER_ROW_WIDTH, PAPERDOLL_HEIGHT)
+    doll.slots = {}
+    for _, def in ipairs(PAPERDOLL_LAYOUT) do
+        doll.slots[def.slot] = CreatePaperDollSlot(doll, def)
+    end
+    membersUI.doll = doll
+    return doll
+end
+
+local function FillPaperDoll(doll, equipment)
+    for slotID, slot in pairs(doll.slots) do
+        local itemString = equipment and equipment[slotID]
+        local itemID = itemString and tonumber(itemString:match("item:(%d+)"))
+        slot.itemString = itemString
+        if itemID then
+            slot.icon:SetTexture((GetItemIcon and GetItemIcon(itemID)) or "Interface\\Icons\\INV_Misc_QuestionMark")
+            slot.icon:Show()
+            slot.empty:Hide()
+
+            -- Qualitaetsfarbe nur, wenn das Item im Client-Cache ist (sonst weisser Rahmen;
+            -- wird beim Eintreffen der Item-Daten automatisch neu gezeichnet).
+            local quality = select(3, GetItemInfo(itemString))
+            local qc = quality and ITEM_QUALITY_COLORS[quality]
+            if qc then
+                slot.border:SetVertexColor(qc.r, qc.g, qc.b)
+            else
+                slot.border:SetVertexColor(1, 1, 1)
+            end
+            slot.border:Show()
+        else
+            slot.icon:Hide()
+            slot.border:Hide()
+            slot.empty:Show()
+        end
+    end
+end
+
 local function RenderMemberDetail(key)
     membersUI.currentDetailKey = key
 
@@ -486,6 +611,35 @@ local function RenderMemberDetail(key)
     end
     goldRow:Show()
     cursor = goldRow
+
+    -- Ausruestung (Charakterfenster-Layout)
+    local doll = GetPaperDoll(content)
+    doll:Hide()
+    nextTextIndex = nextTextIndex + 1
+    local equipHeader = GetTextRow(nextTextIndex, content)
+    equipHeader:SetFontObject("GameFontNormal")
+    equipHeader:ClearAllPoints()
+    equipHeader:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -12)
+    equipHeader:SetText(L.SECTION_EQUIPMENT)
+    equipHeader:Show()
+    cursor = equipHeader
+
+    if snap and snap.equipmentUpdatedAt then
+        FillPaperDoll(doll, snap.equipment)
+        doll:ClearAllPoints()
+        doll:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -8)
+        doll:Show()
+        cursor = doll
+    else
+        nextTextIndex = nextTextIndex + 1
+        local equipEmpty = GetTextRow(nextTextIndex, content)
+        equipEmpty:SetFontObject("GameFontDisableSmall")
+        equipEmpty:ClearAllPoints()
+        equipEmpty:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -6)
+        equipEmpty:SetText(L.SECTION_EQUIPMENT_EMPTY)
+        equipEmpty:Show()
+        cursor = equipEmpty
+    end
 
     -- Inventar
     nextTextIndex = nextTextIndex + 1
@@ -657,7 +811,7 @@ local function RenderMemberDetail(key)
 
     -- Grosszuegige Content-Hoehe: die ScrollFrame-Funktion braucht nur eine ausreichend
     -- grosse, keine pixelgenaue Hoehe (etwas ungenutzter Scrollbereich ist unschaedlich).
-    content:SetHeight(1200 + nextRecipeIndex * RECIPE_ROW_HEIGHT)
+    content:SetHeight(1200 + PAPERDOLL_HEIGHT + nextRecipeIndex * RECIPE_ROW_HEIGHT)
 end
 
 function GroupFound.ShowMemberDetail(key)
@@ -673,6 +827,23 @@ function GroupFound.ShowMemberList()
     membersUI.listView:Show()
     membersUI.currentDetailKey = nil
 end
+
+-- Item-Daten anderer Spieler sind anfangs nicht im Client-Cache (Qualitaetsfarben fehlen);
+-- sobald sie eintreffen, die geoeffnete Detailansicht (gedrosselt) neu zeichnen.
+local itemInfoFrame = CreateFrame("Frame")
+itemInfoFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+local itemRefreshPending = false
+itemInfoFrame:SetScript("OnEvent", function()
+    if itemRefreshPending then return end
+    if not (membersUI.detailView and membersUI.detailView:IsShown() and membersUI.currentDetailKey) then return end
+    itemRefreshPending = true
+    C_Timer.After(0.5, function()
+        itemRefreshPending = false
+        if membersUI.detailView and membersUI.detailView:IsShown() and membersUI.currentDetailKey then
+            RenderMemberDetail(membersUI.currentDetailKey)
+        end
+    end)
+end)
 
 ------------------------------------------------------------
 -- Panel-Aufbau

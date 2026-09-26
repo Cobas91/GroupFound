@@ -1065,6 +1065,52 @@ local function ParseRecipeItemsPayload(payload)
     return map
 end
 
+-- Ausruestung: Slot (1-19, Munition/Slot 0 bewusst ausgelassen) -> "item:ID:..." (kompakt,
+-- mit Verzauberung/Zufallsbonus, damit der Tooltip beim Empfaenger dem eigenen entspricht).
+local function BuildEquipmentPayload(equipment)
+    local slots = {}
+    for slot in pairs(equipment or {}) do table.insert(slots, slot) end
+    table.sort(slots)
+    local parts = {}
+    for _, slot in ipairs(slots) do
+        table.insert(parts, slot .. "=" .. equipment[slot])
+    end
+    return table.concat(parts, ";")
+end
+
+local function ParseEquipmentPayload(payload)
+    local equipment = {}
+    for slot, itemString in (payload or ""):gmatch("(%d+)=(item:[%-%d:]+)") do
+        slot = tonumber(slot)
+        if slot >= 1 and slot <= 19 and #itemString <= 100 then equipment[slot] = itemString end
+    end
+    return equipment
+end
+
+local lastEquipmentPayload
+
+function GroupFound.CaptureEquipment()
+    if not GroupFoundCharDB or not GetInventoryItemLink then return end
+    local equipment = {}
+    for slot = 1, 19 do
+        local link = GetInventoryItemLink("player", slot)
+        local itemID = link and link:match("item:(%d+)")
+        if itemID then
+            equipment[slot] = CompactItemString(link) or ("item:" .. itemID)
+        end
+    end
+
+    local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
+    local payload = BuildEquipmentPayload(equipment)
+    if payload == lastEquipmentPayload and snap.equipmentUpdatedAt then return end
+    lastEquipmentPayload = payload
+
+    snap.equipment = equipment
+    snap.equipmentUpdatedAt = time()
+    GroupFound.PushSnapshotKind("EQUIP")
+    if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
+end
+
 local function ParseGoldPayload(payload)
     return tonumber(payload) or 0
 end
@@ -1088,7 +1134,7 @@ local function ParseRecipesPayload(payload)
     return map
 end
 
-local SNAP_SEND_PRIORITY = { GOLD = 1, PROF = 1, BAGS = 2, BANK = 2, RECIPES = 3, RECITEMS = 3 }
+local SNAP_SEND_PRIORITY = { GOLD = 1, PROF = 1, EQUIP = 1, BAGS = 2, BANK = 2, RECIPES = 3, RECITEMS = 3 }
 
 function GroupFound.SendSnapshotChunks(kind, payload, updatedAt, targets)
     if not targets or #targets == 0 or not updatedAt then return end
@@ -1145,6 +1191,8 @@ function GroupFound.PushSnapshotKind(kind)
         GroupFound.SendSnapshotChunks("RECIPES", BuildRecipesPayload(snap.recipes), snap.recipesUpdatedAt, targets)
     elseif kind == "RECITEMS" and snap.recipeItemsUpdatedAt then
         GroupFound.SendSnapshotChunks("RECITEMS", BuildRecipeItemsPayload(snap.recipeItems), snap.recipeItemsUpdatedAt, targets)
+    elseif kind == "EQUIP" and snap.equipmentUpdatedAt then
+        GroupFound.SendSnapshotChunks("EQUIP", BuildEquipmentPayload(snap.equipment), snap.equipmentUpdatedAt, targets)
     elseif kind == "GOLD" and snap.goldUpdatedAt then
         GroupFound.SendSnapshotChunks("GOLD", tostring(snap.gold or 0), snap.goldUpdatedAt, targets)
     end
@@ -1170,6 +1218,9 @@ function GroupFound.PushSnapshots(targets)
     if snap.recipeItemsUpdatedAt then
         GroupFound.SendSnapshotChunks("RECITEMS", BuildRecipeItemsPayload(snap.recipeItems), snap.recipeItemsUpdatedAt, targets)
     end
+    if snap.equipmentUpdatedAt then
+        GroupFound.SendSnapshotChunks("EQUIP", BuildEquipmentPayload(snap.equipment), snap.equipmentUpdatedAt, targets)
+    end
     if snap.goldUpdatedAt then
         GroupFound.SendSnapshotChunks("GOLD", tostring(snap.gold or 0), snap.goldUpdatedAt, targets)
     end
@@ -1188,7 +1239,7 @@ end
 
 local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunks, payload)
     if not kind or not updatedAt or not chunkIdx or not totalChunks then return end
-    if kind ~= "BAGS" and kind ~= "BANK" and kind ~= "PROF" and kind ~= "RECIPES" and kind ~= "RECITEMS" and kind ~= "GOLD" then return end
+    if kind ~= "BAGS" and kind ~= "BANK" and kind ~= "PROF" and kind ~= "RECIPES" and kind ~= "RECITEMS" and kind ~= "EQUIP" and kind ~= "GOLD" then return end
     if totalChunks < 1 or totalChunks > MAX_SNAP_CHUNKS or chunkIdx < 1 or chunkIdx > totalChunks then return end
     if updatedAt < 1 or updatedAt > time() + 300 or #payload > SNAP_PAYLOAD_BYTES then return end
 
@@ -1227,6 +1278,9 @@ local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunk
     elseif kind == "RECITEMS" and updatedAt > (snap.recipeItemsUpdatedAt or 0) then
         snap.recipeItems = ParseRecipeItemsPayload(fullPayload)
         snap.recipeItemsUpdatedAt = updatedAt
+    elseif kind == "EQUIP" and updatedAt > (snap.equipmentUpdatedAt or 0) then
+        snap.equipment = ParseEquipmentPayload(fullPayload)
+        snap.equipmentUpdatedAt = updatedAt
     elseif kind == "GOLD" and updatedAt > (snap.goldUpdatedAt or 0) then
         snap.gold = ParseGoldPayload(fullPayload)
         snap.goldUpdatedAt = updatedAt
@@ -1243,7 +1297,7 @@ end
 function GroupFound.GetSnapshotUpdatedAt(snap)
     if not snap then return nil end
     local latest = nil
-    for _, field in ipairs({ "bagsUpdatedAt", "bankUpdatedAt", "profUpdatedAt", "recipesUpdatedAt", "goldUpdatedAt" }) do
+    for _, field in ipairs({ "bagsUpdatedAt", "bankUpdatedAt", "profUpdatedAt", "recipesUpdatedAt", "equipmentUpdatedAt", "goldUpdatedAt" }) do
         if snap[field] and (not latest or snap[field] > latest) then
             latest = snap[field]
         end
@@ -1405,6 +1459,7 @@ commEventFrame:RegisterEvent("BANKFRAME_CLOSED")
 commEventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 commEventFrame:RegisterEvent("SPELLS_CHANGED")
 commEventFrame:RegisterEvent("PLAYER_MONEY")
+commEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 -- Nicht in jedem Client vorhanden (Craft-Fenster nur Classic Era): unbekannte Events
 -- duerfen das Laden nicht abbrechen.
 for _, recipeEvent in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_UPDATE", "TRADE_SKILL_LIST_UPDATE",
@@ -1424,6 +1479,7 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.After(2, function()
             GroupFound.CaptureProfessions()
             GroupFound.CaptureGold()
+            GroupFound.CaptureEquipment()
             GroupFound.GossipPush()
         end)
         -- Faehigkeiten-Daten sind kurz nach dem Login teils noch leer; erneut lesen
@@ -1434,6 +1490,8 @@ commEventFrame:SetScript("OnEvent", function(self, event, ...)
         C_Timer.NewTicker(GOSSIP_INTERVAL, function() GroupFound.GossipPush() end)
     elseif event == "PLAYER_MONEY" then
         ThrottledCapture("gold", GroupFound.CaptureGold)
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+        ThrottledCapture("equipment", GroupFound.CaptureEquipment, 1)
     elseif event == "CHAT_MSG_ADDON" then
         OnAddonMessage(...)
     elseif event == "CHAT_MSG_LOOT" then

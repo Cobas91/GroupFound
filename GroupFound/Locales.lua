@@ -97,8 +97,10 @@ local defaults = {
     MEMBER_DETAIL_BACK = "< Back",
     MEMBER_DETAIL_STAND_FMT = "As of %s",
     MEMBER_DETAIL_NO_DATA = "No data received yet.",
-    MEMBER_ROW_CLICK_HINT = "Click to view inventory, bank and professions",
+    MEMBER_ROW_CLICK_HINT = "Click to view equipment, inventory, bank and professions",
 
+    SECTION_EQUIPMENT = "Equipment",
+    SECTION_EQUIPMENT_EMPTY = "No equipment data yet.",
     SECTION_INVENTORY = "Inventory",
     SECTION_BANK = "Bank",
     SECTION_PROFESSIONS = "Professions",
@@ -203,8 +205,10 @@ overrides.deDE = {
     MEMBER_DETAIL_BACK = "< Zurück",
     MEMBER_DETAIL_STAND_FMT = "Stand: %s",
     MEMBER_DETAIL_NO_DATA = "Noch keine Daten empfangen.",
-    MEMBER_ROW_CLICK_HINT = "Klicken für Inventar, Bank und Berufe",
+    MEMBER_ROW_CLICK_HINT = "Klicken für Ausrüstung, Inventar, Bank und Berufe",
 
+    SECTION_EQUIPMENT = "Ausrüstung",
+    SECTION_EQUIPMENT_EMPTY = "Noch keine Ausrüstungs-Daten.",
     SECTION_INVENTORY = "Inventar",
     SECTION_BANK = "Bank",
     SECTION_PROFESSIONS = "Berufe",
