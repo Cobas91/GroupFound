@@ -771,7 +771,16 @@ local function RenderMemberDetail(key)
                         })
                     end
                 end
-                table.sort(entries, function(a, b) return a.name < b.name end)
+                -- Absteigend nach der zum Benutzen benoetigten Stufe des Items, bei Gleichstand
+                -- alphabetisch. Rezepte ohne (schon gecachte) Item-Daten stehen unten; die
+                -- Reihenfolge korrigiert sich beim Eintreffen der Item-Daten von selbst.
+                for _, e in ipairs(entries) do
+                    e.reqLevel = (e.itemID and select(5, GetItemInfo(e.itemID))) or -1
+                end
+                table.sort(entries, function(a, b)
+                    if a.reqLevel ~= b.reqLevel then return a.reqLevel > b.reqLevel end
+                    return a.name < b.name
+                end)
 
                 if #entries == 0 then
                     nextTextIndex = nextTextIndex + 1
