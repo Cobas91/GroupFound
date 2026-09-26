@@ -380,12 +380,14 @@ local function GetRecipeRow(index, parent)
 
         row:SetScript("OnEnter", function(self)
             self.highlight:Show()
-            if not (self.itemID or self.spellID) then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             if self.itemID then
                 GameTooltip:SetItemByID(self.itemID)
-            else
+            elseif self.spellID then
                 GameTooltip:SetSpellByID(self.spellID)
+            else
+                -- Weder Item noch Zauber bekannt: wenigstens den Rezeptnamen zeigen.
+                GameTooltip:SetText(self.recipeName or "", 1, 1, 1)
             end
             GameTooltip:Show()
         end)
@@ -402,8 +404,16 @@ end
 local function ClearRecipeRows()
     for _, row in ipairs(recipeRowPool) do
         row:Hide()
-        row.itemID, row.spellID = nil, nil
+        row.itemID, row.spellID, row.recipeName = nil, nil, nil
     end
+end
+
+-- Fuer Rezepte ohne bekanntes Item: das Item ueber den (meist identischen) Rezeptnamen im
+-- Client-Cache suchen. Klappt nur, wenn der eigene Client das Item schon einmal gesehen hat.
+local function LookupItemIDByName(name)
+    if not GetItemInfo or type(name) ~= "string" or name == "" then return nil end
+    local ok, _, link = pcall(GetItemInfo, name)
+    return ok and link and tonumber(link:match("item:(%d+)")) or nil
 end
 
 -- Platziert ein fliessendes Icon-Grid unterhalb von anchorTo, gibt die Anzahl
@@ -746,8 +756,12 @@ local function RenderMemberDetail(key)
                 local entries = {}
                 for _, recipe in ipairs(recipeIDs or {}) do
                     if type(recipe) == "string" then
-                        -- Nur der Rezeptname bekannt (Link ohne Zauber-ID): kein Tooltip moeglich.
-                        table.insert(entries, { name = recipe })
+                        -- Nur der Rezeptname bekannt (Link ohne Zauber-ID): Item aus der
+                        -- vom Besitzer gesendeten Zuordnung, sonst per Namenssuche im Cache.
+                        table.insert(entries, {
+                            name = recipe,
+                            itemID = recipeItems[recipe] or LookupItemIDByName(recipe),
+                        })
                     else
                         table.insert(entries, {
                             spellID = recipe,
@@ -773,7 +787,7 @@ local function RenderMemberDetail(key)
                 for _, e in ipairs(entries) do
                     nextRecipeIndex = nextRecipeIndex + 1
                     local row = GetRecipeRow(nextRecipeIndex, content)
-                    row.itemID, row.spellID = e.itemID, e.spellID
+                    row.itemID, row.spellID, row.recipeName = e.itemID, e.spellID, e.name
 
                     local iconTexture = (e.itemID and GetItemIcon and GetItemIcon(e.itemID)) or e.icon
                     row.icon:SetTexture(iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")

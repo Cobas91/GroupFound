@@ -778,15 +778,21 @@ local function ReadRecipeList(api)
         if kind ~= "header" then
             local link = api.link(i) or ""
             local id = link:match("enchant:(%d+)") or link:match("spell:(%d+)")
+            local key
             if id then
-                table.insert(ids, tonumber(id))
+                key = tonumber(id)
+            elseif type(name) == "string" and name ~= "" then
+                key = (name:gsub("[;:|%c]", " "))
+            end
+            if key then
+                table.insert(ids, key)
+                -- Der Item-Link liefert das hergestellte Item auch dann, wenn der Rezept-
+                -- Link keine Zauber-ID enthaelt (Classic Era); Schluessel ist dann der Name.
                 if api.itemLink then
                     local itemLink = api.itemLink(i)
                     local itemID = itemLink and tonumber(itemLink:match("item:(%d+)"))
-                    if itemID then items[tonumber(id)] = itemID end
+                    if itemID then items[key] = itemID end
                 end
-            elseif type(name) == "string" and name ~= "" then
-                table.insert(ids, (name:gsub("[;:|%c]", " ")))
             end
         end
     end
@@ -1051,16 +1057,27 @@ end
 
 local function BuildRecipeItemsPayload(map)
     local parts = {}
-    for spellID, itemID in pairs(map or {}) do
-        table.insert(parts, spellID .. ":" .. itemID)
+    -- Schluessel: Zauber-ID ("spellID:itemID") oder Rezeptname ("n<Name>:itemID").
+    for key, itemID in pairs(map or {}) do
+        if type(key) == "number" then
+            table.insert(parts, key .. ":" .. itemID)
+        else
+            table.insert(parts, "n" .. key .. ":" .. itemID)
+        end
     end
     return table.concat(parts, ";")
 end
 
 local function ParseRecipeItemsPayload(payload)
     local map = {}
-    for spellID, itemID in (payload or ""):gmatch("(%d+):(%d+)") do
-        map[tonumber(spellID)] = tonumber(itemID)
+    for entry in (payload or ""):gmatch("[^;]+") do
+        local nameKey, nameItem = entry:match("^n(.+):(%d+)$")
+        if nameKey then
+            if #nameKey <= 100 then map[nameKey] = tonumber(nameItem) end
+        else
+            local spellID, itemID = entry:match("^(%d+):(%d+)$")
+            if spellID then map[tonumber(spellID)] = tonumber(itemID) end
+        end
     end
     return map
 end
