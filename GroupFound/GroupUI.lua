@@ -14,6 +14,8 @@ local HISTORY_ROW_WIDTH = 380
 local HISTORY_ROW_HEIGHT = 42
 local ICON_SIZE = 28
 local ICON_SPACING = 6
+local RECIPE_ROW_HEIGHT = 26
+local RECIPE_ICON_SIZE = 22
 
 local function trim(s)
     if not s then return "" end
@@ -49,7 +51,8 @@ local historyRowPool = {}
 local iconCellPool = {}
 local textRowPool = {}
 local profRowPool = {}
-local nextIconIndex, nextTextIndex, nextProfIndex = 0, 0, 0
+local recipeRowPool = {}
+local nextIconIndex, nextTextIndex, nextProfIndex, nextRecipeIndex = 0, 0, 0, 0
 local expandedProfessions = {}
 
 local function CreateFlowDivider(parent, anchorTo, xOffset, yOffset, width)
@@ -348,6 +351,61 @@ local function ClearProfessionRows()
     end
 end
 
+-- Eine Rezept-Zeile: Icon + Name, Hover zeigt den Item-Tooltip (falls das hergestellte
+-- Item bekannt ist, siehe Comm.lua ReadRecipeList) bzw. sonst den Zauber-Tooltip.
+local function GetRecipeRow(index, parent)
+    local row = recipeRowPool[index]
+    if not row then
+        row = CreateFrame("Frame", nil, parent)
+        row:SetSize(MEMBER_ROW_WIDTH - 10, RECIPE_ROW_HEIGHT)
+        row:EnableMouse(true)
+
+        row.highlight = row:CreateTexture(nil, "BACKGROUND")
+        row.highlight:SetAllPoints()
+        row.highlight:SetColorTexture(1, 0.82, 0, 0.10)
+        row.highlight:Hide()
+
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(RECIPE_ICON_SIZE, RECIPE_ICON_SIZE)
+        row.icon:SetPoint("LEFT", 12, 0)
+
+        row.border = row:CreateTexture(nil, "OVERLAY")
+        row.border:SetAllPoints(row.icon)
+        row.border:SetTexture("Interface\\Common\\WhiteIconFrame")
+
+        row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+        row.text:SetJustifyH("LEFT")
+        row.text:SetWidth(MEMBER_ROW_WIDTH - 10 - 12 - RECIPE_ICON_SIZE - 12)
+
+        row:SetScript("OnEnter", function(self)
+            self.highlight:Show()
+            if not (self.itemID or self.spellID) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if self.itemID then
+                GameTooltip:SetItemByID(self.itemID)
+            else
+                GameTooltip:SetSpellByID(self.spellID)
+            end
+            GameTooltip:Show()
+        end)
+        row:SetScript("OnLeave", function(self)
+            self.highlight:Hide()
+            GameTooltip:Hide()
+        end)
+
+        recipeRowPool[index] = row
+    end
+    return row
+end
+
+local function ClearRecipeRows()
+    for _, row in ipairs(recipeRowPool) do
+        row:Hide()
+        row.itemID, row.spellID = nil, nil
+    end
+end
+
 -- Platziert ein fliessendes Icon-Grid unterhalb von anchorTo, gibt die Anzahl
 -- benoetigter Zeilen zurueck (fuer die Cursor-Fortschaltung des Aufrufers).
 local function PlaceIconGrid(parent, anchorTo, counts, yOffsetAfterAnchor, links)
@@ -407,7 +465,8 @@ local function RenderMemberDetail(key)
     ClearIconCells()
     ClearTextRows()
     ClearProfessionRows()
-    nextIconIndex, nextTextIndex, nextProfIndex = 0, 0, 0
+    ClearRecipeRows()
+    nextIconIndex, nextTextIndex, nextProfIndex, nextRecipeIndex = 0, 0, 0, 0
 
     local content = membersUI.detailContent
     local cursor = membersUI.detailAnchor
@@ -529,25 +588,60 @@ local function RenderMemberDetail(key)
 
             if isExpanded then
                 local recipeIDs = snap.recipes and snap.recipes[p.name]
-                local names = {}
+                local recipeItems = snap.recipeItems or {}
+                local entries = {}
                 for _, recipe in ipairs(recipeIDs or {}) do
                     if type(recipe) == "string" then
-                        table.insert(names, recipe)
+                        -- Nur der Rezeptname bekannt (Link ohne Zauber-ID): kein Tooltip moeglich.
+                        table.insert(entries, { name = recipe })
                     else
-                        table.insert(names, GroupFound.GetSpellName(recipe) or ("#" .. recipe))
+                        table.insert(entries, {
+                            spellID = recipe,
+                            name = GroupFound.GetSpellName(recipe) or ("#" .. recipe),
+                            icon = GroupFound.GetSpellIcon(recipe),
+                            itemID = recipeItems[recipe],
+                        })
                     end
                 end
+                table.sort(entries, function(a, b) return a.name < b.name end)
 
-                nextTextIndex = nextTextIndex + 1
-                local recipeRow = GetTextRow(nextTextIndex, content)
-                recipeRow:SetFontObject("GameFontDisableSmall")
-                recipeRow:SetWidth(MEMBER_ROW_WIDTH - 26)
-                recipeRow:ClearAllPoints()
-                recipeRow:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 10, -2)
-                recipeRow:SetJustifyH("LEFT")
-                recipeRow:SetText(#names > 0 and table.concat(names, ", ") or L.SECTION_RECIPES_EMPTY)
-                recipeRow:Show()
-                cursor = recipeRow
+                if #entries == 0 then
+                    nextTextIndex = nextTextIndex + 1
+                    local emptyRecipes = GetTextRow(nextTextIndex, content)
+                    emptyRecipes:SetFontObject("GameFontDisableSmall")
+                    emptyRecipes:ClearAllPoints()
+                    emptyRecipes:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -2)
+                    emptyRecipes:SetText(L.SECTION_RECIPES_EMPTY)
+                    emptyRecipes:Show()
+                    cursor = emptyRecipes
+                end
+
+                for _, e in ipairs(entries) do
+                    nextRecipeIndex = nextRecipeIndex + 1
+                    local row = GetRecipeRow(nextRecipeIndex, content)
+                    row.itemID, row.spellID = e.itemID, e.spellID
+
+                    local iconTexture = (e.itemID and GetItemIcon and GetItemIcon(e.itemID)) or e.icon
+                    row.icon:SetTexture(iconTexture or "Interface\\Icons\\INV_Misc_QuestionMark")
+                    row.text:SetText(e.name)
+
+                    -- Qualitaetsfarbe nur, wenn das Item im Client-Cache ist; sonst weiss
+                    -- (wird beim naechsten Neuzeichnen korrekt, sobald gecacht).
+                    local quality = e.itemID and select(3, GetItemInfo(e.itemID))
+                    local qc = quality and ITEM_QUALITY_COLORS[quality]
+                    if qc then
+                        row.text:SetTextColor(qc.r, qc.g, qc.b)
+                        row.border:SetVertexColor(qc.r, qc.g, qc.b)
+                    else
+                        row.text:SetTextColor(1, 1, 1)
+                        row.border:SetVertexColor(1, 1, 1)
+                    end
+
+                    row:ClearAllPoints()
+                    row:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, (cursor == profRow) and -2 or 0)
+                    row:Show()
+                    cursor = row
+                end
             end
         end
     else
@@ -563,7 +657,7 @@ local function RenderMemberDetail(key)
 
     -- Grosszuegige Content-Hoehe: die ScrollFrame-Funktion braucht nur eine ausreichend
     -- grosse, keine pixelgenaue Hoehe (etwas ungenutzter Scrollbereich ist unschaedlich).
-    content:SetHeight(1200)
+    content:SetHeight(1200 + nextRecipeIndex * RECIPE_ROW_HEIGHT)
 end
 
 function GroupFound.ShowMemberDetail(key)

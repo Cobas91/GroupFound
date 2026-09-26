@@ -538,6 +538,16 @@ function GroupFound.GetSpellName(spellID)
     return nil
 end
 
+function GroupFound.GetSpellIcon(spellID)
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(spellID)
+        if type(info) == "table" and info.iconID then return info.iconID end
+    end
+    if GetSpellTexture then return (GetSpellTexture(spellID)) end
+    if GetSpellInfo then return select(3, GetSpellInfo(spellID)) end
+    return nil
+end
+
 local function ReadSkillLines()
     local lines = {}
     if not (GetNumSkillLines and GetSkillLineInfo) then return lines end
@@ -758,7 +768,10 @@ local function ReadRecipeList(api)
 
     -- Rezepte werden als Zauber-ID uebertragen (Name im Sprachclient des Betrachters);
     -- laesst sich aus dem Link keine ID lesen, wird der Rezeptname selbst uebertragen.
+    -- Zusaetzlich (nur TradeSkill-Fenster) die Zuordnung Rezept-Zauber -> hergestelltes
+    -- Item, damit die UI Item-Icon und -Tooltip zeigen kann.
     local ids = {}
+    local items = {}
     local total = api.num()
     for i = 1, total do
         local name, kind = api.info(i)
@@ -767,6 +780,11 @@ local function ReadRecipeList(api)
             local id = link:match("enchant:(%d+)") or link:match("spell:(%d+)")
             if id then
                 table.insert(ids, tonumber(id))
+                if api.itemLink then
+                    local itemLink = api.itemLink(i)
+                    local itemID = itemLink and tonumber(itemLink:match("item:(%d+)"))
+                    if itemID then items[tonumber(id)] = itemID end
+                end
             elseif type(name) == "string" and name ~= "" then
                 table.insert(ids, (name:gsub("[;:|%c]", " ")))
             end
@@ -779,19 +797,20 @@ local function ReadRecipeList(api)
             if kind == "header" and collapsed[name] then api.collapse(i) end
         end
     end
-    return ids
+    return ids, items
 end
 
 local function ReadOpenRecipes()
-    local profName, ids
+    local profName, ids, items
     if GetTradeSkillLine and GetNumTradeSkills and GetTradeSkillRecipeLink then
         local name = GetTradeSkillLine()
         if name and name ~= "UNKNOWN" and GetNumTradeSkills() > 0 then
             profName = name
-            ids = ReadRecipeList({
+            ids, items = ReadRecipeList({
                 num = GetNumTradeSkills,
                 info = function(i) local n, t, _, e = GetTradeSkillInfo(i) return n, t, e end,
                 link = GetTradeSkillRecipeLink,
+                itemLink = GetTradeSkillItemLink,
                 expand = ExpandTradeSkillSubClass,
                 collapse = CollapseTradeSkillSubClass,
             })
@@ -801,7 +820,7 @@ local function ReadOpenRecipes()
         local name = GetCraftDisplaySkillLine()
         if name and name ~= "" and GetNumCrafts() > 0 then
             profName = name
-            ids = ReadRecipeList({
+            ids, items = ReadRecipeList({
                 num = GetNumCrafts,
                 info = function(i) local n, _, t, _, e = GetCraftInfo(i) return n, t, e end,
                 link = GetCraftRecipeLink,
@@ -815,7 +834,7 @@ local function ReadOpenRecipes()
     if profName and profName == GroupFound.GetSpellName(2656) then
         profName = GroupFound.GetSpellName(2575) or profName
     end
-    return profName, ids or {}
+    return profName, ids or {}, items or {}
 end
 
 -- Die Berufe-Events sind zwischen Client-Varianten uneinheitlich; zusaetzlich alle paar
@@ -840,7 +859,7 @@ end
 function GroupFound.CaptureOpenRecipes()
     if not GroupFoundCharDB then return end
     recipeEventsIgnoredUntil = (GetTime and GetTime() or 0) + 1.5
-    local ok, profName, ids = pcall(ReadOpenRecipes)
+    local ok, profName, ids, items = pcall(ReadOpenRecipes)
     if not ok then
         GroupFound.Print("CaptureOpenRecipes error: " .. tostring(profName))
         return
@@ -849,11 +868,29 @@ function GroupFound.CaptureOpenRecipes()
     local snap = EnsureSnapshot(NormalizeKey(GetSelfFullName()))
     snap.recipes = snap.recipes or {}
     snap.recipes[profName] = ids
+
+    local itemsChanged = false
+    snap.recipeItems = snap.recipeItems or {}
+    for spellID, itemID in pairs(items or {}) do
+        if snap.recipeItems[spellID] ~= itemID then
+            snap.recipeItems[spellID] = itemID
+            itemsChanged = true
+        end
+    end
+
     local signature = RecipesSignature(snap.recipes)
-    if signature == lastRecipeSignature then return end
+    local recipesChanged = signature ~= lastRecipeSignature
     lastRecipeSignature = signature
-    snap.recipesUpdatedAt = time()
-    GroupFound.PushSnapshotKind("RECIPES")
+    if not recipesChanged and not itemsChanged then return end
+
+    if recipesChanged then
+        snap.recipesUpdatedAt = time()
+        GroupFound.PushSnapshotKind("RECIPES")
+    end
+    if itemsChanged then
+        snap.recipeItemsUpdatedAt = time()
+        GroupFound.PushSnapshotKind("RECITEMS")
+    end
     if GroupFound.RefreshGroupUI then GroupFound.RefreshGroupUI() end
 end
 
@@ -1012,6 +1049,22 @@ local function BuildRecipesPayload(recipes)
     return table.concat(parts, ";")
 end
 
+local function BuildRecipeItemsPayload(map)
+    local parts = {}
+    for spellID, itemID in pairs(map or {}) do
+        table.insert(parts, spellID .. ":" .. itemID)
+    end
+    return table.concat(parts, ";")
+end
+
+local function ParseRecipeItemsPayload(payload)
+    local map = {}
+    for spellID, itemID in (payload or ""):gmatch("(%d+):(%d+)") do
+        map[tonumber(spellID)] = tonumber(itemID)
+    end
+    return map
+end
+
 local function ParseGoldPayload(payload)
     return tonumber(payload) or 0
 end
@@ -1035,7 +1088,7 @@ local function ParseRecipesPayload(payload)
     return map
 end
 
-local SNAP_SEND_PRIORITY = { GOLD = 1, PROF = 1, BAGS = 2, BANK = 2, RECIPES = 3 }
+local SNAP_SEND_PRIORITY = { GOLD = 1, PROF = 1, BAGS = 2, BANK = 2, RECIPES = 3, RECITEMS = 3 }
 
 function GroupFound.SendSnapshotChunks(kind, payload, updatedAt, targets)
     if not targets or #targets == 0 or not updatedAt then return end
@@ -1090,6 +1143,8 @@ function GroupFound.PushSnapshotKind(kind)
         GroupFound.SendSnapshotChunks("PROF", BuildProfessionsPayload(snap.professions), snap.profUpdatedAt, targets)
     elseif kind == "RECIPES" and snap.recipesUpdatedAt then
         GroupFound.SendSnapshotChunks("RECIPES", BuildRecipesPayload(snap.recipes), snap.recipesUpdatedAt, targets)
+    elseif kind == "RECITEMS" and snap.recipeItemsUpdatedAt then
+        GroupFound.SendSnapshotChunks("RECITEMS", BuildRecipeItemsPayload(snap.recipeItems), snap.recipeItemsUpdatedAt, targets)
     elseif kind == "GOLD" and snap.goldUpdatedAt then
         GroupFound.SendSnapshotChunks("GOLD", tostring(snap.gold or 0), snap.goldUpdatedAt, targets)
     end
@@ -1112,6 +1167,9 @@ function GroupFound.PushSnapshots(targets)
     if snap.recipesUpdatedAt then
         GroupFound.SendSnapshotChunks("RECIPES", BuildRecipesPayload(snap.recipes), snap.recipesUpdatedAt, targets)
     end
+    if snap.recipeItemsUpdatedAt then
+        GroupFound.SendSnapshotChunks("RECITEMS", BuildRecipeItemsPayload(snap.recipeItems), snap.recipeItemsUpdatedAt, targets)
+    end
     if snap.goldUpdatedAt then
         GroupFound.SendSnapshotChunks("GOLD", tostring(snap.gold or 0), snap.goldUpdatedAt, targets)
     end
@@ -1130,7 +1188,7 @@ end
 
 local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunks, payload)
     if not kind or not updatedAt or not chunkIdx or not totalChunks then return end
-    if kind ~= "BAGS" and kind ~= "BANK" and kind ~= "PROF" and kind ~= "RECIPES" and kind ~= "GOLD" then return end
+    if kind ~= "BAGS" and kind ~= "BANK" and kind ~= "PROF" and kind ~= "RECIPES" and kind ~= "RECITEMS" and kind ~= "GOLD" then return end
     if totalChunks < 1 or totalChunks > MAX_SNAP_CHUNKS or chunkIdx < 1 or chunkIdx > totalChunks then return end
     if updatedAt < 1 or updatedAt > time() + 300 or #payload > SNAP_PAYLOAD_BYTES then return end
 
@@ -1166,6 +1224,9 @@ local function OnSnapChunkReceived(sender, kind, updatedAt, chunkIdx, totalChunk
     elseif kind == "RECIPES" and updatedAt > (snap.recipesUpdatedAt or 0) then
         snap.recipes = ParseRecipesPayload(fullPayload)
         snap.recipesUpdatedAt = updatedAt
+    elseif kind == "RECITEMS" and updatedAt > (snap.recipeItemsUpdatedAt or 0) then
+        snap.recipeItems = ParseRecipeItemsPayload(fullPayload)
+        snap.recipeItemsUpdatedAt = updatedAt
     elseif kind == "GOLD" and updatedAt > (snap.goldUpdatedAt or 0) then
         snap.gold = ParseGoldPayload(fullPayload)
         snap.goldUpdatedAt = updatedAt

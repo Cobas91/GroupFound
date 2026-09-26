@@ -71,7 +71,7 @@ local defaults = {
     TIME_DAYS_FMT = "%d days ago",
     GOLD_LABEL = "Gold: %s",
     GOLD_UNKNOWN = "Gold: unknown",
-    SECTION_PROFESSIONS_HINT = "Click a profession to show its recipes.",
+    SECTION_PROFESSIONS_HINT = "Click a profession to show its recipes; hover a recipe for details. Item details are collected once the owner has opened the profession window.",
     SECTION_RECIPES_EMPTY = "No recipes yet. They sync once the player has opened this profession window.",
 
     POPUP_INVITE_TEXT = "%s invites you to link GroupFound groups.\nMembers automatically see each other's notable finds, bags, bank and professions.",
@@ -177,7 +177,7 @@ overrides.deDE = {
     TIME_DAYS_FMT = "vor %d Tagen",
     GOLD_LABEL = "Gold: %s",
     GOLD_UNKNOWN = "Gold: unbekannt",
-    SECTION_PROFESSIONS_HINT = "Beruf anklicken, um die Rezepte anzuzeigen.",
+    SECTION_PROFESSIONS_HINT = "Beruf anklicken, um die Rezepte anzuzeigen; Rezept anfahren für Details. Item-Details werden erfasst, sobald der Besitzer das Berufsfenster geöffnet hat.",
     SECTION_RECIPES_EMPTY = "Noch keine Rezepte. Sie werden übertragen, sobald der Spieler das Berufsfenster geöffnet hat.",
 
     POPUP_INVITE_TEXT = "%s lädt dich zu einer GroupFound-Gruppe ein.\nMitglieder sehen automatisch gegenseitig ihre nennenswerten Funde, Taschen, Bank und Berufe.",
