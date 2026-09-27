@@ -81,7 +81,7 @@ end
 
 local function BuildFrame()
     frame = CreateFrame("Frame", "GroupFoundFrame", UIParent, "BackdropTemplate")
-    frame:SetSize(460, 590)
+    frame:SetSize(580, 590)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
@@ -137,7 +137,9 @@ local function BuildFrame()
     tabBar:SetHeight(26)
 
     frame.tabs = {}
-    local tabWidth = 424 / #TAB_ORDER
+    -- Dynamisch statt fest verdrahtet, damit die Tabs bei einer Aenderung der Fensterbreite
+    -- automatisch mitwachsen.
+    local tabWidth = tabBar:GetWidth() / #TAB_ORDER
     for i, tabName in ipairs(TAB_ORDER) do
         local btn = CreateTabButton(tabBar)
         btn:SetWidth(tabWidth)

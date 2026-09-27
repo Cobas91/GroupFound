@@ -8,14 +8,23 @@
 GroupFound = GroupFound or {}
 local L = GroupFound.L
 
-local MEMBER_ROW_WIDTH = 380
+local MEMBER_ROW_WIDTH = 500
 local MEMBER_ROW_HEIGHT = 32
-local HISTORY_ROW_WIDTH = 380
+local HISTORY_ROW_WIDTH = 500
 local HISTORY_ROW_HEIGHT = 42
 local ICON_SIZE = 28
 local ICON_SPACING = 6
 local RECIPE_ROW_HEIGHT = 26
 local RECIPE_ICON_SIZE = 22
+
+-- Detailansicht: Ausruestung (links) und Berufe/Rezepte (rechts) sitzen nebeneinander in
+-- zwei gleich hohen Boxen; beide Breiten addieren sich mit dem Spaltenabstand zu
+-- MEMBER_ROW_WIDTH, damit die Zeile buendig mit Inventar/Bank darunter abschliesst.
+local DETAIL_COL_GAP = 16
+local EQUIP_BOX_WIDTH = 190
+local EQUIP_COL_WIDTH = EQUIP_BOX_WIDTH - 16
+local PROF_BOX_WIDTH = MEMBER_ROW_WIDTH - EQUIP_BOX_WIDTH - DETAIL_COL_GAP
+local PROF_CONTENT_WIDTH = PROF_BOX_WIDTH - 34
 
 local function trim(s)
     if not s then return "" end
@@ -52,7 +61,7 @@ local iconCellPool = {}
 local textRowPool = {}
 local profRowPool = {}
 local recipeRowPool = {}
-local nextIconIndex, nextTextIndex, nextProfIndex, nextRecipeIndex = 0, 0, 0, 0
+local nextIconIndex, nextTextIndex, nextProfIndex, nextRecipeIndex, nextProfTextIndex = 0, 0, 0, 0, 0
 local expandedProfessions = {}
 
 local function CreateFlowDivider(parent, anchorTo, xOffset, yOffset, width)
@@ -300,16 +309,44 @@ local function GetIconCell(index, parent)
     return cell
 end
 
-local function GetTextRow(index, parent)
+-- width: optional, fuer Text ausserhalb der vollen Content-Breite (z.B. die Spalten-
+-- Kopfzeilen "Ausruestung"/"Berufe"). Muss bei jedem Abruf gesetzt werden, nicht nur bei
+-- der Erstellung - ein wiederverwendeter Pool-Slot kann in einem anderen Render fuer
+-- einen anderen (schmaleren/breiteren) Text gebraucht werden.
+local function GetTextRow(index, parent, width)
     local row = textRowPool[index]
     if not row then
         row = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row:SetJustifyH("LEFT")
         textRowPool[index] = row
     end
-    row:SetWidth(MEMBER_ROW_WIDTH - 10)
+    row:SetWidth(width or (MEMBER_ROW_WIDTH - 10))
     row:SetFontObject("GameFontHighlightSmall")
     return row
+end
+
+-- Eigener Pool fuer Texte *innerhalb* der Berufe-Box (profContent): eigener Blizzard-Parent
+-- noetig, damit sie vom Scrollframe der Box geclippt werden und mitscrollen - ein
+-- wiederverwendeter Slot des normalen textRowPool koennte sonst ausserhalb der Box haengen.
+local profTextRowPool = {}
+
+local function GetProfTextRow(index, parent)
+    local row = profTextRowPool[index]
+    if not row then
+        row = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row:SetJustifyH("LEFT")
+        profTextRowPool[index] = row
+    end
+    row:SetWidth(PROF_CONTENT_WIDTH - 10)
+    row:SetFontObject("GameFontHighlightSmall")
+    return row
+end
+
+local function ClearProfTextRows()
+    for _, row in ipairs(profTextRowPool) do
+        row:Hide()
+        row:SetText("")
+    end
 end
 
 local function ClearIconCells()
@@ -334,7 +371,7 @@ local function GetProfessionRow(index, parent)
     local btn = profRowPool[index]
     if not btn then
         btn = CreateFrame("Button", nil, parent)
-        btn:SetSize(MEMBER_ROW_WIDTH - 10, 18)
+        btn:SetSize(PROF_CONTENT_WIDTH - 10, 18)
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.text:SetPoint("LEFT", 0, 0)
         btn.text:SetJustifyH("LEFT")
@@ -357,7 +394,7 @@ local function GetRecipeRow(index, parent)
     local row = recipeRowPool[index]
     if not row then
         row = CreateFrame("Frame", nil, parent)
-        row:SetSize(MEMBER_ROW_WIDTH - 10, RECIPE_ROW_HEIGHT)
+        row:SetSize(PROF_CONTENT_WIDTH - 10, RECIPE_ROW_HEIGHT)
         row:EnableMouse(true)
 
         row.highlight = row:CreateTexture(nil, "BACKGROUND")
@@ -376,7 +413,7 @@ local function GetRecipeRow(index, parent)
         row.text = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         row.text:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
         row.text:SetJustifyH("LEFT")
-        row.text:SetWidth(MEMBER_ROW_WIDTH - 10 - 12 - RECIPE_ICON_SIZE - 12)
+        row.text:SetWidth(PROF_CONTENT_WIDTH - 10 - 12 - RECIPE_ICON_SIZE - 12)
 
         row:SetScript("OnEnter", function(self)
             self.highlight:Show()
@@ -464,9 +501,10 @@ end
 -- slot = Inventar-Slot-ID, name = Slot-Name fuer GetInventorySlotInfo.
 local PAPERDOLL_SLOT_SIZE = 36
 local PAPERDOLL_SLOT_GAP = 4
-local PAPERDOLL_SIDE_MARGIN = 40
+local PAPERDOLL_SIDE_MARGIN = 14
 local PAPERDOLL_ROWS = 8
 local PAPERDOLL_HEIGHT = PAPERDOLL_ROWS * (PAPERDOLL_SLOT_SIZE + PAPERDOLL_SLOT_GAP) + 8 + PAPERDOLL_SLOT_SIZE + 2
+local DETAIL_BOX_HEIGHT = PAPERDOLL_HEIGHT + 16
 local PAPERDOLL_LAYOUT = {
     { slot = 1,  name = "HeadSlot",          side = "L", row = 0 },
     { slot = 2,  name = "NeckSlot",          side = "L", row = 1 },
@@ -499,10 +537,10 @@ local function CreatePaperDollSlot(parent, def)
     if def.side == "L" then
         x, y = PAPERDOLL_SIDE_MARGIN, -def.row * (size + PAPERDOLL_SLOT_GAP)
     elseif def.side == "R" then
-        x, y = MEMBER_ROW_WIDTH - PAPERDOLL_SIDE_MARGIN - size, -def.row * (size + PAPERDOLL_SLOT_GAP)
+        x, y = EQUIP_COL_WIDTH - PAPERDOLL_SIDE_MARGIN - size, -def.row * (size + PAPERDOLL_SLOT_GAP)
     else
         local total = 3 * size + 2 * PAPERDOLL_SLOT_GAP
-        x = (MEMBER_ROW_WIDTH - total) / 2 + def.col * (size + PAPERDOLL_SLOT_GAP)
+        x = (EQUIP_COL_WIDTH - total) / 2 + def.col * (size + PAPERDOLL_SLOT_GAP)
         y = -(PAPERDOLL_ROWS * (size + PAPERDOLL_SLOT_GAP) + 8)
     end
     slot:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -540,15 +578,15 @@ local function CreatePaperDollSlot(parent, def)
     return slot
 end
 
-local function GetPaperDoll(parent)
-    if membersUI.doll then return membersUI.doll end
+-- Wird einmalig in BuildMembersPanel aufgerufen (kein Lazy-Caching noetig, kein zweiter
+-- Aufrufer).
+local function CreatePaperDoll(parent)
     local doll = CreateFrame("Frame", nil, parent)
-    doll:SetSize(MEMBER_ROW_WIDTH, PAPERDOLL_HEIGHT)
+    doll:SetSize(EQUIP_COL_WIDTH, PAPERDOLL_HEIGHT)
     doll.slots = {}
     for _, def in ipairs(PAPERDOLL_LAYOUT) do
         doll.slots[def.slot] = CreatePaperDollSlot(doll, def)
     end
-    membersUI.doll = doll
     return doll
 end
 
@@ -599,9 +637,8 @@ local function RenderMemberDetail(key)
 
     ClearIconCells()
     ClearTextRows()
-    ClearProfessionRows()
-    ClearRecipeRows()
-    nextIconIndex, nextTextIndex, nextProfIndex, nextRecipeIndex = 0, 0, 0, 0
+    -- Berufe/Rezepte (eigener Pool) werden erst direkt vor ihrer Box weiter unten geleert.
+    nextIconIndex, nextTextIndex = 0, 0
 
     local content = membersUI.detailContent
     local cursor = membersUI.detailAnchor
@@ -622,34 +659,48 @@ local function RenderMemberDetail(key)
     goldRow:Show()
     cursor = goldRow
 
-    -- Ausruestung (Charakterfenster-Layout)
-    local doll = GetPaperDoll(content)
-    doll:Hide()
+    -- Ausruestung (links) und Berufe/Rezepte (rechts): zwei gleich hohe, feste Boxen
+    -- nebeneinander, beide unterhalb der Gold-Zeile. Die Berufe-Box scrollt unabhaengig
+    -- (eigener Pool/Cursor weiter unten), damit viele Rezepte nicht die Ausruestung
+    -- nach unten verschieben.
+    local equipBox = membersUI.equipBox
+    local profBox = membersUI.profBox
+
+    equipBox:ClearAllPoints()
+    equipBox:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -20)
+    equipBox:Show()
+
+    profBox:ClearAllPoints()
+    profBox:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", EQUIP_BOX_WIDTH + DETAIL_COL_GAP, -20)
+    profBox:Show()
+
     nextTextIndex = nextTextIndex + 1
-    local equipHeader = GetTextRow(nextTextIndex, content)
+    local equipHeader = GetTextRow(nextTextIndex, content, EQUIP_BOX_WIDTH)
     equipHeader:SetFontObject("GameFontNormal")
     equipHeader:ClearAllPoints()
-    equipHeader:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -12)
+    equipHeader:SetPoint("BOTTOMLEFT", equipBox, "TOPLEFT", 0, 4)
     equipHeader:SetText(L.SECTION_EQUIPMENT)
     equipHeader:Show()
-    cursor = equipHeader
+
+    nextTextIndex = nextTextIndex + 1
+    local profHeader = GetTextRow(nextTextIndex, content, PROF_BOX_WIDTH)
+    profHeader:SetFontObject("GameFontNormal")
+    profHeader:ClearAllPoints()
+    profHeader:SetPoint("BOTTOMLEFT", profBox, "TOPLEFT", 0, 4)
+    profHeader:SetText(L.SECTION_PROFESSIONS)
+    profHeader:Show()
 
     if snap and snap.equipmentUpdatedAt then
-        FillPaperDoll(doll, snap.equipment)
-        doll:ClearAllPoints()
-        doll:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -8)
-        doll:Show()
-        cursor = doll
+        FillPaperDoll(membersUI.doll, snap.equipment)
+        membersUI.doll:Show()
+        membersUI.equipEmptyText:Hide()
     else
-        nextTextIndex = nextTextIndex + 1
-        local equipEmpty = GetTextRow(nextTextIndex, content)
-        equipEmpty:SetFontObject("GameFontDisableSmall")
-        equipEmpty:ClearAllPoints()
-        equipEmpty:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -6)
-        equipEmpty:SetText(L.SECTION_EQUIPMENT_EMPTY)
-        equipEmpty:Show()
-        cursor = equipEmpty
+        membersUI.doll:Hide()
+        membersUI.equipEmptyText:Show()
     end
+
+    -- Ab hier geht es nur noch unterhalb beider Boxen weiter (feste Hoehe, siehe oben).
+    cursor = equipBox
 
     -- Inventar
     nextTextIndex = nextTextIndex + 1
@@ -713,42 +764,43 @@ local function RenderMemberDetail(key)
         cursor = emptyRow
     end
 
-    -- Berufe + Rezepte (klappbar: Klick auf einen Beruf zeigt/versteckt seine Rezepte)
-    nextTextIndex = nextTextIndex + 1
-    local profHeader = GetTextRow(nextTextIndex, content)
-    profHeader:SetFontObject("GameFontNormal")
-    profHeader:ClearAllPoints()
-    profHeader:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -14)
-    profHeader:SetText(L.SECTION_PROFESSIONS)
-    profHeader:Show()
-    cursor = profHeader
+    -- Berufe + Rezepte (klappbar: Klick auf einen Beruf zeigt/versteckt seine Rezepte).
+    -- Eigene Box mit eigenem Scrollframe/Pool/Cursor (siehe oben, profHeader) - beeinflusst
+    -- nicht die Position von Inventar/Bank, egal wie viele Rezepte aufgeklappt sind.
+    ClearProfessionRows()
+    ClearRecipeRows()
+    ClearProfTextRows()
+    nextProfIndex, nextRecipeIndex, nextProfTextIndex = 0, 0, 0
+
+    local profContent = membersUI.profContent
+    local profCursor = membersUI.profAnchor
 
     local professions = snap and snap.professions
     if professions and #professions > 0 then
-        nextTextIndex = nextTextIndex + 1
-        local profHint = GetTextRow(nextTextIndex, content)
+        nextProfTextIndex = nextProfTextIndex + 1
+        local profHint = GetProfTextRow(nextProfTextIndex, profContent)
         profHint:SetFontObject("GameFontDisableSmall")
         profHint:ClearAllPoints()
-        profHint:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -4)
+        profHint:SetPoint("TOPLEFT", profCursor, "BOTTOMLEFT", 0, -4)
         profHint:SetText(L.SECTION_PROFESSIONS_HINT)
         profHint:Show()
-        cursor = profHint
+        profCursor = profHint
 
         for _, p in ipairs(professions) do
             local expandKey = key .. "|" .. p.name
             local isExpanded = expandedProfessions[expandKey]
 
             nextProfIndex = nextProfIndex + 1
-            local profRow = GetProfessionRow(nextProfIndex, content)
+            local profRow = GetProfessionRow(nextProfIndex, profContent)
             profRow:ClearAllPoints()
-            profRow:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -8)
+            profRow:SetPoint("TOPLEFT", profCursor, "BOTTOMLEFT", 0, -8)
             profRow.text:SetText((isExpanded and "|cffffd100-|r " or "|cffffd100+|r ") .. L.PROFESSION_LEVEL_FMT:format(p.name, p.level, p.maxLevel))
             profRow:SetScript("OnClick", function()
                 expandedProfessions[expandKey] = not expandedProfessions[expandKey]
                 RenderMemberDetail(key)
             end)
             profRow:Show()
-            cursor = profRow
+            profCursor = profRow
 
             if isExpanded then
                 local recipeIDs = snap.recipes and snap.recipes[p.name]
@@ -783,19 +835,19 @@ local function RenderMemberDetail(key)
                 end)
 
                 if #entries == 0 then
-                    nextTextIndex = nextTextIndex + 1
-                    local emptyRecipes = GetTextRow(nextTextIndex, content)
+                    nextProfTextIndex = nextProfTextIndex + 1
+                    local emptyRecipes = GetProfTextRow(nextProfTextIndex, profContent)
                     emptyRecipes:SetFontObject("GameFontDisableSmall")
                     emptyRecipes:ClearAllPoints()
-                    emptyRecipes:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -2)
+                    emptyRecipes:SetPoint("TOPLEFT", profCursor, "BOTTOMLEFT", 0, -2)
                     emptyRecipes:SetText(L.SECTION_RECIPES_EMPTY)
                     emptyRecipes:Show()
-                    cursor = emptyRecipes
+                    profCursor = emptyRecipes
                 end
 
                 for _, e in ipairs(entries) do
                     nextRecipeIndex = nextRecipeIndex + 1
-                    local row = GetRecipeRow(nextRecipeIndex, content)
+                    local row = GetRecipeRow(nextRecipeIndex, profContent)
                     row.itemID, row.spellID, row.recipeName = e.itemID, e.spellID, e.name
 
                     local iconTexture = (e.itemID and GetItemIcon and GetItemIcon(e.itemID)) or e.icon
@@ -815,26 +867,31 @@ local function RenderMemberDetail(key)
                     end
 
                     row:ClearAllPoints()
-                    row:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, (cursor == profRow) and -2 or 0)
+                    row:SetPoint("TOPLEFT", profCursor, "BOTTOMLEFT", 0, (profCursor == profRow) and -2 or 0)
                     row:Show()
-                    cursor = row
+                    profCursor = row
                 end
             end
         end
     else
-        nextTextIndex = nextTextIndex + 1
-        local emptyRow = GetTextRow(nextTextIndex, content)
+        nextProfTextIndex = nextProfTextIndex + 1
+        local emptyRow = GetProfTextRow(nextProfTextIndex, profContent)
         emptyRow:SetFontObject("GameFontDisableSmall")
         emptyRow:ClearAllPoints()
-        emptyRow:SetPoint("TOPLEFT", cursor, "BOTTOMLEFT", 0, -6)
+        emptyRow:SetPoint("TOPLEFT", profCursor, "BOTTOMLEFT", 0, -6)
         emptyRow:SetText(L.SECTION_PROFESSIONS_EMPTY)
         emptyRow:Show()
-        cursor = emptyRow
+        profCursor = emptyRow
     end
+
+    -- Grosszuegig bemessene Scrollhoehe der Berufe-Box (kein pixelgenaues Mitrechnen noetig).
+    profContent:SetHeight(math.max(DETAIL_BOX_HEIGHT, 60 + nextProfIndex * 28 + nextProfTextIndex * 20 + nextRecipeIndex * RECIPE_ROW_HEIGHT))
 
     -- Grosszuegige Content-Hoehe: die ScrollFrame-Funktion braucht nur eine ausreichend
     -- grosse, keine pixelgenaue Hoehe (etwas ungenutzter Scrollbereich ist unschaedlich).
-    content:SetHeight(1200 + PAPERDOLL_HEIGHT + nextRecipeIndex * RECIPE_ROW_HEIGHT)
+    -- Rezepte sitzen in der eigenen, unabhaengig scrollenden Berufe-Box (siehe oben) und
+    -- zaehlen hier nicht mehr mit.
+    content:SetHeight(1200 + DETAIL_BOX_HEIGHT)
 end
 
 function GroupFound.ShowMemberDetail(key)
@@ -886,7 +943,7 @@ function GroupFound.BuildMembersPanel(parent)
     hint:SetJustifyH("LEFT")
     hint:SetText(L.HINT)
 
-    CreateFlowDivider(listView, hint, 0, -12, 424)
+    CreateFlowDivider(listView, hint, 0, -12, 544)
 
     local listLabel = listView:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     listLabel:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -22)
@@ -897,7 +954,7 @@ function GroupFound.BuildMembersPanel(parent)
     -- (variabel lange) Hinweistext oben tatsächlich braucht.
     local inset = CreateFrame("Frame", nil, listView, "InsetFrameTemplate")
     inset:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", -8, -8)
-    inset:SetSize(408, 238)
+    inset:SetSize(528, 238)
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, inset, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 6, -6)
@@ -942,15 +999,15 @@ function GroupFound.BuildMembersPanel(parent)
 
     local inviteHint = listView:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     inviteHint:SetPoint("TOPLEFT", inviteBox, "BOTTOMLEFT", 0, -6)
-    inviteHint:SetWidth(340)
+    inviteHint:SetWidth(460)
     inviteHint:SetJustifyH("LEFT")
     inviteHint:SetText(L.INVITE_HINT)
 
-    local divider2 = CreateFlowDivider(listView, inviteHint, 0, -12, 384)
+    local divider2 = CreateFlowDivider(listView, inviteHint, 0, -12, 504)
 
     local statusText = listView:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     statusText:SetPoint("TOPLEFT", divider2, "BOTTOMLEFT", 6, -12)
-    statusText:SetWidth(372)
+    statusText:SetWidth(492)
     statusText:SetJustifyH("LEFT")
     statusText:SetTextColor(0.3, 1, 0.3)
     statusText:SetText(L.PROTECTION_ALWAYS_ON)
@@ -994,6 +1051,43 @@ function GroupFound.BuildMembersPanel(parent)
     detailAnchor:SetSize(1, 1)
     detailAnchor:SetPoint("TOPLEFT", detailContent, "TOPLEFT", 0, 0)
     membersUI.detailAnchor = detailAnchor
+
+    ------------------------------------------------------------
+    -- Ausruestung (links) + Berufe/Rezepte (rechts): einmalig angelegt, RenderMemberDetail
+    -- positioniert/fuellt sie bei jedem Aufruf neu (siehe dort). Beide Boxen sind Kinder von
+    -- detailContent, damit sie mit dem aeusseren Scrollframe mitscrollen.
+    ------------------------------------------------------------
+    local equipBox = CreateFrame("Frame", nil, detailContent, "InsetFrameTemplate")
+    equipBox:SetSize(EQUIP_BOX_WIDTH, DETAIL_BOX_HEIGHT)
+    membersUI.equipBox = equipBox
+
+    membersUI.doll = CreatePaperDoll(equipBox)
+    membersUI.doll:SetPoint("TOPLEFT", equipBox, "TOPLEFT", 8, -8)
+
+    local equipEmptyText = equipBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    equipEmptyText:SetPoint("CENTER")
+    equipEmptyText:SetJustifyH("CENTER")
+    equipEmptyText:SetWidth(EQUIP_BOX_WIDTH - 20)
+    equipEmptyText:SetText(L.SECTION_EQUIPMENT_EMPTY)
+    membersUI.equipEmptyText = equipEmptyText
+
+    local profBox = CreateFrame("Frame", nil, detailContent, "InsetFrameTemplate")
+    profBox:SetSize(PROF_BOX_WIDTH, DETAIL_BOX_HEIGHT)
+    membersUI.profBox = profBox
+
+    local profScroll = CreateFrame("ScrollFrame", nil, profBox, "UIPanelScrollFrameTemplate")
+    profScroll:SetPoint("TOPLEFT", 6, -6)
+    profScroll:SetPoint("BOTTOMRIGHT", -28, 6)
+
+    local profContent = CreateFrame("Frame", nil, profScroll)
+    profContent:SetSize(PROF_CONTENT_WIDTH, 1)
+    profScroll:SetScrollChild(profContent)
+    membersUI.profContent = profContent
+
+    local profAnchor = CreateFrame("Frame", nil, profContent)
+    profAnchor:SetSize(1, 1)
+    profAnchor:SetPoint("TOPLEFT", profContent, "TOPLEFT", 0, 0)
+    membersUI.profAnchor = profAnchor
 end
 
 function GroupFound.BuildHistoryPanel(parent)
